@@ -1,0 +1,84 @@
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import { Document, Page, pdfjs } from 'react-pdf'
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css'
+import 'react-pdf/dist/esm/Page/TextLayer.css'
+
+// ... (other imports remain the same)
+
+// Set up the PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
+
+export default function FinancialChat() {
+  // ... (other state variables remain the same)
+  const [numPages, setNumPages] = useState<number | null>(null)
+  const [pageNumber, setPageNumber] = useState(1)
+  const [pdfFile, setPdfFile] = useState<string | null>(null)
+
+  // ... (other useEffect hooks and functions remain the same)
+
+  const handleCitationClick = async (citation: Citation) => {
+    setSelectedCitation(citation)
+    setPdfFile(citation.url)
+    setPageNumber(citation.page_number)
+    setIsViewerOpen(true)
+  }
+
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages)
+  }
+
+  // ... (other parts of the component remain the same)
+
+  return (
+    <div className={`flex flex-col h-screen font-sans transition-colors duration-200 ease-in-out ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+      {/* ... (other parts of the JSX remain the same) */}
+      <div className={`border-l flex flex-col transition-all duration-300 ease-in-out ${isViewerOpen ? 'w-[420px]' : 'w-0'} ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
+        {selectedCitation && (
+          <>
+            <div className={`p-4 border-b flex justify-between items-center ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
+              <h2 className="text-xl font-semibold">PDF Viewer</h2>
+              {/* ... (other buttons remain the same) */}
+            </div>
+            <div className="h-full w-full overflow-auto bg-white">
+              {pdfFile && (
+                <Document
+                  file={pdfFile}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  className="w-full h-full"
+                >
+                  <Page 
+                    pageNumber={pageNumber} 
+                    width={400}
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                  />
+                </Document>
+              )}
+            </div>
+            {numPages && (
+              <div className={`p-4 border-t flex justify-between items-center ${isDarkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
+                <Button
+                  onClick={() => setPageNumber(prev => Math.max(prev - 1, 1))}
+                  disabled={pageNumber <= 1}
+                >
+                  Previous
+                </Button>
+                <p>
+                  Page {pageNumber} of {numPages}
+                </p>
+                <Button
+                  onClick={() => setPageNumber(prev => Math.min(prev + 1, numPages))}
+                  disabled={pageNumber >= numPages}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

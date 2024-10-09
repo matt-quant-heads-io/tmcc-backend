@@ -14,8 +14,27 @@ import logging
 import uuid
 import asyncio
 import time
-from scratch import get_financials, get_research_plan, get_final_analysis, get_competitors, get_list_of_companies, preprocess_user_query
+from scratch import get_financials, get_research_plan, get_final_analysis, get_competitors, get_list_of_companies, preprocess_user_query, perform_vector_search
 from sse_starlette.sse import EventSourceResponse
+import warnings
+warnings.filterwarnings("ignore")
+
+
+load_dotenv()
+
+# TODO: Remove logic this after sending base64 bit string for pdfs
+LOCAL_CITATIONS_FOLDER = "/home/ubuntu/tmcc-frontend-reactapp/public/citations"
+os.system(f"rm -rf {LOCAL_CITATIONS_FOLDER}/*")
+print(f"Cleaned local citations folder {LOCAL_CITATIONS_FOLDER}")
+
+DEBUG_ABS_FILE_PATH = "/home/ubuntu/tmcc-backend/debug.json"
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
+if not POLYGON_API_KEY:
+    raise ValueError("API key not found. Please set the `POLYGON_API_KEY` environment variable.")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("API key not found. Please set the `OPENAI_API_KEY` environment variable.")
 
 MESSAGE_STREAM_DELAY = 1  # second
 MESSAGE_STREAM_RETRY_TIMEOUT = 15000  # milisecond
@@ -23,13 +42,12 @@ TASK_NAME_MAP = {
     "get_sec_financials": "Get Company Financials",
     "get_final_analysis": "Generate Final Analysis",
     "get_competitors": "Identify Company Competitors",
-    "get_list_of_companies": "Produce List of Companies"
+    "get_list_of_companies": "Produce List of Companies",
+    "perform_vector_search": "Querying Against Databases"
 }
 
-load_dotenv()
+
 app = FastAPI()
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,12 +62,7 @@ class ResearchRequest(BaseModel):
 
 class ResearchPipeline:
     def __init__(self):
-        api_key = "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"
-
-        if not api_key:
-            raise ValueError("API key not found. Please set the OAI_key environment variable.")
-
-        self.openai_client = openai.Client(api_key=api_key)
+        self.openai_client = openai.Client(api_key=OPENAI_API_KEY)
         self.tools = self.initialize_tools()
 
     def initialize_tools(self) -> Dict[str, str]:
@@ -58,8 +71,8 @@ class ResearchPipeline:
             "get_sec_financials": get_financials,
             "get_final_analysis": get_final_analysis,
             "get_competitors": get_competitors,
-            "get_list_of_companies": get_list_of_companies
-            # "vector_search": 
+            "get_list_of_companies": get_list_of_companies,
+            "perform_vector_search": perform_vector_search
         }
 
     def generate_research_plan(self, query: str) -> List[Dict[str, Any]]:
@@ -67,6 +80,13 @@ class ResearchPipeline:
         return research_plan
 
     async def execute_tasks(self, query:str, tasks: List[Dict[str, Any]], progress_callback: Callable[[str, Any], Awaitable[None]]) -> Dict[str, Any]:
+        debug = False
+        if query.endswith("[debug]"):
+            debug = True
+            query = query[:-7]
+            with open(DEBUG_ABS_FILE_PATH, "w") as f:
+                json.dump({"function": "execute_tasks", "inputs": [query, tasks], "outputs": []}, f)
+        
         results = {"Query": query, "Context": [], "Execution": {}}
         context = {"context": []}
         
@@ -84,7 +104,7 @@ class ResearchPipeline:
                     "task": TASK_NAME_MAP["get_competitors"],
                     "data": {}
                     })
-            comps = get_competitors(processed_user_query)
+            comps = get_competitors(processed_user_query, debug)
             await send_sse({"event": "update",
                     "type": "subtaskUpdate",
                     "status": "completed",
@@ -104,7 +124,7 @@ class ResearchPipeline:
                     "data": {}
                     })
             tasks.pop(0)
-            list_of_tickers = get_list_of_companies(processed_user_query)
+            list_of_tickers = get_list_of_companies(processed_user_query, debug)
             await send_sse({"event": "update",
                     "type": "subtaskUpdate",
                     "status": "completed",
@@ -121,10 +141,7 @@ class ResearchPipeline:
             for q in all_queries:
                 execution_pipeline[t].append(q)
 
-        import pdb 
-        # pdb.set_trace()
         for t, queries in execution_pipeline.items():
-            print(f"t: {t}, queries: {queries}")
             task_name = t 
             if task_name not in self.tools or task_name == "get_final_analysis":
                 continue
@@ -140,31 +157,12 @@ class ResearchPipeline:
                         "task": TASK_NAME_MAP[task_name],
                         "data": {}
                         })
-
             
             for q in queries:
-            # for task in tasks:
-                # task_name = task.get("task")
-                
-
-                # if tool:
-                #     # Send "in_progress" status update
-                #     print(f"progress_callback: {progress_callback}")
-
-                    
-
                 try:
-                    # task_input = {
-                    #     "task_description": "",#task.get("description", ""),
-                    #     "context": context
-                    # }
-                    # results["Query"] = q
-                    # print(f'results["Query"]: {results["Query"]}')
-                    # task_input_json = json.dumps(task_input)
-                    result_json = tool(q, results)
+                    result_json = tool(q, results, debug)
                 except RuntimeError as e:
                     print(f"Error in execute tasks: {e}")
-                    # Send completed status update
             await send_sse({"event": "update",
                 "type": "subtaskUpdate",
                 "status": "completed",
@@ -198,13 +196,14 @@ class ResearchPipeline:
         import pdb
         # pdb.set_trace()
         try:
-            print(f"Inside execute_research_plan: {callback_url}")
+            # print(f"Inside execute_research_plan: {callback_url}")
             await send_sse({"event": "update",
                     "type": "finalAnalysis",
                     "status": "completed",
                     "id": str(uuid.uuid4()),
                     "finalAnalysis": results["finalAnalysis"],
-                    "workbookData": results["finalAnalysis"]["workbookData"]
+                    "workbookData": results["finalAnalysis"]["workbookData"] if "workbookData" in results["finalAnalysis"] else {},
+                    "citations": results["finalAnalysis"]["citations"] if "citations" in results["finalAnalysis"] else []
                 })
             if "charts" not in results["finalAnalysis"]:
                 results["finalAnalysis"]["charts"] = {}
@@ -212,11 +211,15 @@ class ResearchPipeline:
                 results["finalAnalysis"]["tables"] = {}
             if "insights" not in results["finalAnalysis"]:
                 results["finalAnalysis"]["insights"] = []
+            if "workbook" not in results["finalAnalysis"]:
+                results["finalAnalysis"]["workbook"] = {}
+            if "citations" not in results["finalAnalysis"]:
+                results["finalAnalysis"]["citations"] = []
 
         except requests.RequestException as e:
             logging.error(f"Failed to send final result: {str(e)}")
 
-        print(f"{results['workbookData']}")
+        # print(f"{results['workbookData']}")
 
         return results
 
@@ -247,7 +250,7 @@ async def run_research(query: str, callback_url: Callable):
 
 @app.post("/api/research/start")
 async def start_research(request: ResearchRequest, background_tasks: BackgroundTasks):
-    print(f"request: {request}")
+    # print(f"request: {request}")
     task_id = str(uuid.uuid4())
     background_tasks.add_task(run_research, request.query, send_sse)
     return {"task_id": task_id, "message": "Research started"}
@@ -278,7 +281,7 @@ async def message_stream(request: Request):
 
 @app.post("/send-sse")
 async def send_sse(data: dict = Body(...)):
-    print(f"INSIDE send_sse!!")
+    # print(f"INSIDE send_sse!!")
     global latest_sse_data
     latest_sse_data = data
     await asyncio.sleep(1)  # Wait a second before checking for new data

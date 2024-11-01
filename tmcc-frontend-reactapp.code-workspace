@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../tmcc-frontend-reactapp"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}

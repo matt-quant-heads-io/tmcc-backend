@@ -5,6 +5,7 @@ import os
 # from sec_cik_mapper import StockMapper
 # import pdfkit
 import json
+import time
 
 import weaviate
 # import weaviate.classes as wvc
@@ -102,11 +103,51 @@ class_obj = {
             "dataType": ["text"],
         },
         {
-            "name": "s3_doc_url",
+            "name": "filing_url",
+            "dataType": ["text"],
+        },
+        {
+            "name": "sector",
+            "dataType": ["text"],
+        },
+        {
+            "name": "industry",
+            "dataType": ["text"],
+        },
+        {
+            "name": "city",
+            "dataType": ["text"],
+        },
+        {
+            "name": "state",
+            "dataType": ["text"],
+        },
+        {
+            "name": "zip_code",
             "dataType": ["text"],
         },
         {
             "name": "text",
+            "dataType": ["text"],
+        },
+        {
+            "name": "logo",
+            "dataType": ["text"],
+        },
+        {
+            "name": "country",
+            "dataType": ["text"],
+        },
+        {
+            "name": "description",
+            "dataType": ["text"],
+        },
+        {
+            "name": "cusip",
+            "dataType": ["text"],
+        },
+        {
+            "name": "isin",
             "dataType": ["text"],
         },
         {
@@ -121,7 +162,6 @@ class_obj = {
 }
 
 
-
 # if client.schema.exists("Dow30_10K_10Q"):
 #     client.schema.delete_class("Dow30_10K_10Q")
 # client.schema.create_class(class_obj)
@@ -132,11 +172,6 @@ class_obj = {
 
 
 def upload_data_to_weaviate(client):
-    # client = weaviate.connect_to_local(
-    #     host="localhost",
-    #     port=8080
-    # )
-
     """ citation attributes form the frontend
 
     type Citation = {
@@ -165,31 +200,59 @@ def upload_data_to_weaviate(client):
     # client.batch.configure(batch_size=100)  # Configure batch
     # with client.batch as batch:
         # Batch import all Questions
-    for file in tqdm(sorted(os.listdir("/home/ubuntu/tmcc-backend/data/chunked_filings"))[513+192:]):
-        if not file.endswith(".json"):
-            continue
+    filings_universe = set(sorted(os.listdir("/home/ubuntu/tmcc-backend/data/chunked_filings")))
+    if not os.path.exists("/home/ubuntu/tmcc-backend/to_delete/loading.log"):
+        open("/home/ubuntu/tmcc-backend/to_delete/loading.log", "w").write("")
+    loaded_filings = set([f.replace("\n", "") for f in open("/home/ubuntu/tmcc-backend/to_delete/loading.log", "r").readlines()])
+    filings_to_load = filings_universe - loaded_filings
+    print(f"Filings to load: {len(filings_to_load)}")
+    
 
-        data = None
-        with open(f"/home/ubuntu/tmcc-backend/data/chunked_filings/{file}", "r") as f:
-            data = json.load(f)
-        
-        client.batch.configure(batch_size=300)  # Configure batch
-        with client.batch as batch:
-            for i, d in enumerate(data):
-                properties = {
-                "filing_type": d["filing_type"],
-                "company_name": d["company_name"],
-                "ticker": d["ticker"],
-                "accession_number": d["accession_number"],
-                "s3_doc_url": d["s3_doc_url"],
-                "text": d["text"],
-                "page_number": d["page_number"],
-                    "report_date": f'{str(parser.parse(d["report_date"])).split(" ")[0]}T00:00:00.000Z'
+    for file in tqdm(filings_to_load):
+        try:
+            if not file.endswith(".json"):
+                continue
+
+            data = None
+            with open(f"/home/ubuntu/tmcc-backend/data/chunked_filings/{file}", "r") as f:
+                data = json.load(f)
+            
+            client.batch.configure(batch_size=300)  # Configure batch
+            with client.batch as batch:
+                for i, d in enumerate(data):
+                    
+
+                    properties = {
+                        "filing_type": d["filing_type"],
+                        "company_name": d["company_name"],
+                        "ticker": d["ticker"],
+                        "accession_number": d["accession_number"],
+                        "filing_url": d["filing_url"],
+                        "text": d["text"],
+                        "industry": d["industry"],
+                        "city": d["city"],
+                        "state": d["state"],
+                        "zip_code": d["zip_code"],
+                        "logo":  d["logo"],
+                        "country":  d["country"],
+                        "description": d["description"],
+                        "cusip":  d["cusip"],
+                        "isin": d["isin"],
+                        "page_number": d["page_number"],
+                        "report_date": f'{str(parser.parse(d["report_date"])).split(" ")[0]}T00:00:00.000Z'
                 }
 
-                batch.add_data_object(properties, "Dow30_10K_10Q")
+                    batch.add_data_object(properties, "Dow30_10K_10Q")
 
-        print(f"Finished importing {file}")
+            with open(f"/home/ubuntu/tmcc-backend/to_delete/loading.log", "a") as f:
+                f.write(file + "\n")
+
+            print(f"Finished {file}")
+        except Exception as e:
+            print(f"Error {e}")
+            raise(e)
+
+        
 
 
     # print(data)

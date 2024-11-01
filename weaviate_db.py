@@ -128,6 +128,93 @@ def download_sec_filings_as_local_pdfs():
                 continue
 
 
+def get_company_profile(smybol):
+    response = requests.get(f"https://financialmodelingprep.com/api/v3/profile/{smybol}?apikey=tSJPBoMv79Baig8DXj50Oky1p4oQbyhU")
+    return response.json()[0]
+
+import requests
+def get_sec_filings_urls():
+    dl = Downloader("MyCompanyName", "email223@example.com")
+    cmd_convert_to_pdf = 'wkhtmltopdf "{html_filename}" "{pdf_filename}"'
+
+    ticker_to_filings_map = {}
+    for ticker in DOW_30_TICKERS:
+        company_profile = get_company_profile(ticker)
+        sector = company_profile["sector"]
+        industry = company_profile["industry"]
+        city = company_profile["city"]
+        state = company_profile["state"]
+        zip_code = company_profile["zip"]
+        logo = company_profile["image"]
+        website = company_profile["website"]
+        country = company_profile["country"]
+        description = company_profile["description"]
+        cusip = company_profile["cusip"]
+        isin = company_profile["isin"]
+
+        ticker_to_filings_map[ticker] = {}
+        cik = get_cik_from_ticker(ticker)
+        try:
+            metadatas = dl.get_filing_metadatas(
+                RequestedFilings(ticker_or_cik=ticker, form_type="10-K", limit=11)
+            )
+        except Exception as e:
+                print(f"Error getting metadatas for ticker {ticker}")
+                continue
+
+        for metadata in metadatas:
+            try:
+                ticker_to_filings_map[ticker][metadata.accession_number] = metadata.primary_doc_url
+                ticker_to_filings_map[ticker]["sector"] = sector
+                ticker_to_filings_map[ticker]["industry"] = industry
+                ticker_to_filings_map[ticker]["city"] = city
+                ticker_to_filings_map[ticker]["state"] = state
+                ticker_to_filings_map[ticker]["zip_code"] = zip_code
+                ticker_to_filings_map[ticker]["logo"] = logo
+                ticker_to_filings_map[ticker]["country"] = country
+                ticker_to_filings_map[ticker]["description"] = description
+                ticker_to_filings_map[ticker]["cusip"] = cusip
+                ticker_to_filings_map[ticker]["isin"] = isin
+
+            except Exception as e:
+                # print(f"Error for ticker {ticker}")
+                input(f"Error {e} ticker {ticker}, Press Enter to continue...")
+                continue         
+        
+        try:
+            metadatas = dl.get_filing_metadatas(
+                RequestedFilings(ticker_or_cik=ticker, form_type="10-Q", limit=33)
+            )
+        except Exception as e:
+                print(f"Error getting metadatas for ticker {ticker}")
+                continue
+
+        for metadata in metadatas:
+            try:
+                ticker_to_filings_map[ticker][metadata.accession_number] = metadata.primary_doc_url
+                ticker_to_filings_map[ticker][metadata.accession_number] = metadata.primary_doc_url
+                ticker_to_filings_map[ticker]["sector"] = sector
+                ticker_to_filings_map[ticker]["industry"] = industry
+                ticker_to_filings_map[ticker]["city"] = city
+                ticker_to_filings_map[ticker]["state"] = state
+                ticker_to_filings_map[ticker]["zip_code"] = zip_code
+                ticker_to_filings_map[ticker]["logo"] = logo
+                ticker_to_filings_map[ticker]["country"] = country
+                ticker_to_filings_map[ticker]["description"] = description
+                ticker_to_filings_map[ticker]["cusip"] = cusip
+                ticker_to_filings_map[ticker]["isin"] = isin
+            except Exception as e:
+                # print(f"Error for ticker {ticker}")
+                input(f"Error {e} for ticker {ticker}, Press Enter to continue...")
+                continue
+        print(f"Finished getting url filings for {ticker}")
+
+    with open("/home/ubuntu/tmcc-backend/company_filings_urls.json", "w") as f:
+        f.write(json.dumps(ticker_to_filings_map))
+
+    return ticker_to_filings_map
+
+
 
 # def upload_data_to_weaviate():
 #     client = weaviate.connect_to_local(
@@ -266,10 +353,15 @@ def chunk_data():
 
 
     chunks = []
+    ticker_to_filings_map = None
+    with open("/home/ubuntu/tmcc-backend/company_filings_urls.json", "r") as f:
+        ticker_to_filings_map = json.loads(f.read())
+
     for file in tqdm(sorted(os.listdir(DATA_DIR))):
         try:
             if not file.endswith(".pdf"):
                 continue
+            # import pdb; pdb.set_trace()
             ticker, filing_type, accession_number, report_date = file.split(".pdf")[0].split("_")
             report_year = int(report_date[:4])
             loader = PyMuPDFLoader(f"{DATA_DIR}/{file}")
@@ -281,8 +373,24 @@ def chunk_data():
                     "company_name": TICKER_TO_COMPANY[ticker],
                     "ticker": ticker,
                     "accession_number": accession_number,
-                    "s3_doc_url": file,
+                    "filing_url": ticker_to_filings_map[ticker][accession_number],
+                    "sector": ticker_to_filings_map[ticker]["sector"],
+                    "industry": ticker_to_filings_map[ticker]["industry"],
+                    "city": ticker_to_filings_map[ticker]["city"],
+                    "state": ticker_to_filings_map[ticker]["state"],
+                    "zip_code": ticker_to_filings_map[ticker]["zip_code"],
+                    "logo": ticker_to_filings_map[ticker]["logo"],
                     "text": "",
+                    "sector": ticker_to_filings_map[ticker]["sector"],
+                    "industry": ticker_to_filings_map[ticker]["industry"],
+                    "city": ticker_to_filings_map[ticker]["city"],
+                    "state": ticker_to_filings_map[ticker]["state"],
+                    "zip_code": ticker_to_filings_map[ticker]["zip_code"],
+                    "logo":  ticker_to_filings_map[ticker]["logo"],
+                    "country":  ticker_to_filings_map[ticker]["country"],
+                    "description": ticker_to_filings_map[ticker]["description"],
+                    "cusip":  ticker_to_filings_map[ticker]["cusip"],
+                    "isin": ticker_to_filings_map[ticker]["isin"],
                     "page_number": page_num,
                     "report_date": report_date#parser.parse(report_date)
                 }
@@ -339,6 +447,7 @@ if __name__ == '__main__':
     # download_sec_filings_as_local_pdfs()
     # upload_pdfs_to_s3()    
     # upload_data_to_weaviate()
+    get_sec_filings_urls()
     chunk_data()
 
     

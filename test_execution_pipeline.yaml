@@ -1,0 +1,44 @@
+# Calculate the correlation between gross margins and inventory ratio for 2022 for MSFT and AAPL. 
+execution_plan:
+  execution_plan_id: 1234
+  tasks:
+    - task_id: 1
+      name: "Get Company Financials"
+      query: "Calculate the correlation between gross margins and inventory ratio for 2022 for AAPL."
+      description: "Retrieve the company financials for AAPL"
+      action: get_company_financials
+      dependencies: []
+    - task_id: 2
+      name: "Get Company Financials"
+      query: "Calculate the correlation between gross margins and inventory ratio for 2022 for MSFT."
+      description: "Retrieve the company financials for MSFT"
+      action: get_company_financials
+      dependencies: []
+    - task_id: 3
+      name: "Get Final Analysis"
+      query: "Calculate the correlation between the % change of aapl’s gross margins and its inventory ratio for 2022 versus MSFT"
+      description: Perform a final analysis atop the calculated financials
+      action: get_final_analysis
+      dependencies:
+        - 1
+        - 2
+    - task_id: 4
+      name: "Get Final Analysis"
+      query: "Calculate the correlation between the % change of aapl’s gross margins and its inventory ratio for 2022 versus MSFT"
+      description: "Perform a final analysis atop the calculated financials"
+      action: get_final_analysis
+      dependencies:
+        - 1
+    #   action: get_final_analysis
+    # - task_id: 5
+    #   name: "Get Final Analysis"
+    #   query: "Calculate the correlation between the % change of aapl’s gross margins and its inventory ratio for 2022 versus MSFT"
+    #   description: Perform a final analysis atop the calculated financials
+    #   dependencies:
+    #     - 1
+
+
+
+
+
+

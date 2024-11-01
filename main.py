@@ -14,9 +14,10 @@ import logging
 import uuid
 import asyncio
 import time
-from scratch import get_financials, get_research_plan, get_final_analysis, get_competitors, get_list_of_companies, preprocess_user_query, perform_vector_search
+from scratch import split_companies, determine_query_pattern, map_competitors_and_query_to_list_of_queries, map_list_of_companies_and_query_to_list_of_queries, perform_news_search_via_google, perform_quantitative_vector_search, get_financials, get_research_plan, get_final_analysis, get_competitors, get_list_of_companies, preprocess_user_query, perform_vector_search, get_market_data, build_market_data_chart, get_news_by_symbol, run_backtest
 from sse_starlette.sse import EventSourceResponse
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
@@ -43,7 +44,13 @@ TASK_NAME_MAP = {
     "get_final_analysis": "Generate Final Analysis",
     "get_competitors": "Identify Company Competitors",
     "get_list_of_companies": "Produce List of Companies",
-    "perform_vector_search": "Querying Against Databases"
+    "perform_vector_search": "Querying Against Databases",
+    "get_market_data": "Pull market data for relevant symbol(s)",
+    "build_market_data_chart": "Build market data chart",
+    "get_news_by_symbol": "Get news by symbol",
+    "run_backtest": "Run a backtest",
+    "perform_quantitative_vector_search": "Perform quantitative queries atop vector search",
+    "perform_news_search_via_google": "Search through relevant articles and press releases" 
 }
 
 
@@ -72,12 +79,119 @@ class ResearchPipeline:
             "get_final_analysis": get_final_analysis,
             "get_competitors": get_competitors,
             "get_list_of_companies": get_list_of_companies,
-            "perform_vector_search": perform_vector_search
+            "perform_vector_search": perform_vector_search,
+            "get_market_data": get_market_data,
+            "build_market_data_chart": build_market_data_chart,
+            "get_news_by_symbol": get_news_by_symbol,
+            "run_backtest": run_backtest,
+            "perform_quantitative_vector_search": perform_quantitative_vector_search,
+            "perform_news_search_via_google": perform_news_search_via_google
         }
 
     def generate_research_plan(self, query: str) -> List[Dict[str, Any]]:
         research_plan = get_research_plan(query)
         return research_plan
+
+    # async def execute_tasks(self, query:str, tasks: List[Dict[str, Any]], progress_callback: Callable[[str, Any], Awaitable[None]]) -> Dict[str, Any]:
+    #     debug = False
+    #     if query.endswith("[debug]"):
+    #         debug = True
+    #         query = query[:-7]
+    #         with open(DEBUG_ABS_FILE_PATH, "w") as f:
+    #             json.dump({"function": "execute_tasks", "inputs": [query, tasks], "outputs": []}, f)
+        
+    #     results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": []}, "MarketData": {}, "QualAndQuant": {}, "Tables": {}}
+    #     context = {"context": []}
+        
+    #     processed_user_query, entities = preprocess_user_query(query)
+    #     # import pdb; pdb.set_trace()
+        
+    #     tickers_to_process = [t["value"] for t in entities if t["entity"]=="ticker"]
+
+    #     context["user_query"] = processed_user_query
+    #     tasks_contain_comps = len([t["task"] for t in tasks if t["task"]=="get_competitors"]) > 0
+    #     if tasks_contain_comps:
+    #         tasks.pop(0)
+    #         await send_sse({"event": "update",
+    #                 "type": "subtaskUpdate",
+    #                 "status": "in-progress",
+    #                 "id": str(uuid.uuid4()),
+    #                 "task": TASK_NAME_MAP["get_competitors"],
+    #                 "data": {}
+    #                 })
+    #         comps = get_competitors(processed_user_query, debug)
+    #         await send_sse({"event": "update",
+    #                 "type": "subtaskUpdate",
+    #                 "status": "completed",
+    #                 "id": str(uuid.uuid4()),
+    #                 "task": TASK_NAME_MAP["get_competitors"],
+    #                 "data": {}
+    #                 })
+    #         tickers_to_process += comps[:2]
+
+    #     tasks_contain_list_of_comps = len([t["task"] for t in tasks if t["task"]=="get_list_of_companies"]) > 0
+    #     if tasks_contain_list_of_comps:
+    #         await send_sse({"event": "update",
+    #                 "type": "subtaskUpdate",
+    #                 "status": "in-progress",
+    #                 "id": str(uuid.uuid4()),
+    #                 "task": TASK_NAME_MAP["get_list_of_companies"],
+    #                 "data": {}
+    #                 })
+    #         tasks.pop(0)
+    #         list_of_tickers = get_list_of_companies(processed_user_query, debug)
+    #         await send_sse({"event": "update",
+    #                 "type": "subtaskUpdate",
+    #                 "status": "completed",
+    #                 "id": str(uuid.uuid4()),
+    #                 "task": TASK_NAME_MAP["get_list_of_companies"],
+    #                 "data": {}
+    #                 })
+    #         tickers_to_process += list_of_tickers
+
+    #     all_queries = []
+    #     for ticker_to_process in tickers_to_process:
+    #         all_queries.append(processed_user_query.replace(tickers_to_process[0].upper(), ticker_to_process.upper()))
+
+    #     # all_queries = [processed_user_query.lower().replace(tickers_to_process[0].lower(), t.lower()) for t in tickers_to_process]
+    #     execution_pipeline = {task.get("task"):[] for task in tasks}
+    #     # import pdb; pdb.set_trace()
+        
+    #     for t, qs in execution_pipeline.items():
+    #         for q in all_queries:
+    #             execution_pipeline[t].append(q)
+
+    #     for t, queries in execution_pipeline.items():
+    #         task_name = t 
+    #         if task_name not in self.tools or task_name == "get_final_analysis":
+    #             continue
+
+    #         tool = self.tools.get(task_name)
+    #         if not tool:
+    #             continue
+
+    #         await send_sse({"event": "update",
+    #                     "type": "subtaskUpdate",
+    #                     "status": "in-progress",
+    #                     "id": str(uuid.uuid4()),
+    #                     "task": TASK_NAME_MAP[task_name],
+    #                     "data": {}
+    #                     })
+            
+    #         for q in queries:
+    #             try:
+    #                 result_json = tool(q, results, debug)
+    #             except RuntimeError as e:
+    #                 print(f"Error in execute tasks: {e}")
+    #         await send_sse({"event": "update",
+    #             "type": "subtaskUpdate",
+    #             "status": "completed",
+    #             "id": str(uuid.uuid4()),
+    #             "task": TASK_NAME_MAP[task_name],
+    #             "data": {}
+    #         })
+
+    #     return results
 
     async def execute_tasks(self, query:str, tasks: List[Dict[str, Any]], progress_callback: Callable[[str, Any], Awaitable[None]]) -> Dict[str, Any]:
         debug = False
@@ -87,64 +201,71 @@ class ResearchPipeline:
             with open(DEBUG_ABS_FILE_PATH, "w") as f:
                 json.dump({"function": "execute_tasks", "inputs": [query, tasks], "outputs": []}, f)
         
-        results = {"Query": query, "Context": [], "Execution": {}}
+        results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "Tables": {}}
         context = {"context": []}
         
-        processed_user_query, entities = preprocess_user_query(query)
-        tickers_to_process = [t["value"] for t in entities if t["entity"]=="ticker"]
-
-        context["user_query"] = processed_user_query
-        tasks_contain_comps = len([t["task"] for t in tasks if t["task"]=="get_competitors"]) > 0
-        if tasks_contain_comps:
-            tasks.pop(0)
-            await send_sse({"event": "update",
-                    "type": "subtaskUpdate",
-                    "status": "in-progress",
-                    "id": str(uuid.uuid4()),
-                    "task": TASK_NAME_MAP["get_competitors"],
-                    "data": {}
-                    })
-            comps = get_competitors(processed_user_query, debug)
-            await send_sse({"event": "update",
-                    "type": "subtaskUpdate",
-                    "status": "completed",
-                    "id": str(uuid.uuid4()),
-                    "task": TASK_NAME_MAP["get_competitors"],
-                    "data": {}
-                    })
-            tickers_to_process += comps[:2]
-
-        tasks_contain_list_of_comps = len([t["task"] for t in tasks if t["task"]=="get_list_of_companies"]) > 0
-        if tasks_contain_list_of_comps:
-            await send_sse({"event": "update",
-                    "type": "subtaskUpdate",
-                    "status": "in-progress",
-                    "id": str(uuid.uuid4()),
-                    "task": TASK_NAME_MAP["get_list_of_companies"],
-                    "data": {}
-                    })
-            tasks.pop(0)
-            list_of_tickers = get_list_of_companies(processed_user_query, debug)
-            await send_sse({"event": "update",
-                    "type": "subtaskUpdate",
-                    "status": "completed",
-                    "id": str(uuid.uuid4()),
-                    "task": TASK_NAME_MAP["get_list_of_companies"],
-                    "data": {}
-                    })
-            tickers_to_process += list_of_tickers
-
-        all_queries = [processed_user_query.lower().replace(tickers_to_process[0].lower(), t.lower()) for t in tickers_to_process]
-        execution_pipeline = {task.get("task"):[] for task in tasks}
+        # processed_user_query, entities = preprocess_user_query(query)
+        # # import pdb; pdb.set_trace()
         
-        for t, qs in execution_pipeline.items():
-            for q in all_queries:
-                execution_pipeline[t].append(q)
+        # tickers_to_process = [t["value"] for t in entities if t["entity"]=="ticker"]
 
-        for t, queries in execution_pipeline.items():
-            task_name = t 
-            if task_name not in self.tools or task_name == "get_final_analysis":
-                continue
+        # context["user_query"] = processed_user_query
+        # tasks_contain_comps = len([t["task"] for t in tasks if t["task"]=="get_competitors"]) > 0
+        # if tasks_contain_comps:
+        #     tasks.pop(0)
+        #     await send_sse({"event": "update",
+        #             "type": "subtaskUpdate",
+        #             "status": "in-progress",
+        #             "id": str(uuid.uuid4()),
+        #             "task": TASK_NAME_MAP["get_competitors"],
+        #             "data": {}
+        #             })
+        #     comps = get_competitors(processed_user_query, debug)
+        #     await send_sse({"event": "update",
+        #             "type": "subtaskUpdate",
+        #             "status": "completed",
+        #             "id": str(uuid.uuid4()),
+        #             "task": TASK_NAME_MAP["get_competitors"],
+        #             "data": {}
+        #             })
+        #     tickers_to_process += comps[:2]
+
+        # tasks_contain_list_of_comps = len([t["task"] for t in tasks if t["task"]=="get_list_of_companies"]) > 0
+        # if tasks_contain_list_of_comps:
+        #     await send_sse({"event": "update",
+        #             "type": "subtaskUpdate",
+        #             "status": "in-progress",
+        #             "id": str(uuid.uuid4()),
+        #             "task": TASK_NAME_MAP["get_list_of_companies"],
+        #             "data": {}
+        #             })
+        #     tasks.pop(0)
+        #     list_of_tickers = get_list_of_companies(processed_user_query, debug)
+        #     await send_sse({"event": "update",
+        #             "type": "subtaskUpdate",
+        #             "status": "completed",
+        #             "id": str(uuid.uuid4()),
+        #             "task": TASK_NAME_MAP["get_list_of_companies"],
+        #             "data": {}
+        #             })
+        #     tickers_to_process += list_of_tickers
+
+        # all_queries = []
+        # for ticker_to_process in tickers_to_process:
+        #     all_queries.append(processed_user_query.replace(tickers_to_process[0].upper(), ticker_to_process.upper()))
+
+        # # all_queries = [processed_user_query.lower().replace(tickers_to_process[0].lower(), t.lower()) for t in tickers_to_process]
+        # execution_pipeline = {task.get("task"):[] for task in tasks}
+        # # import pdb; pdb.set_trace()
+        
+        # for t, qs in execution_pipeline.items():
+        #     for q in all_queries:
+        #         execution_pipeline[t].append(q)
+
+        for t in tasks:
+            task_name = t["task"]
+            # if task_name not in self.tools or task_name == "get_final_analysis":
+            #     continue
 
             tool = self.tools.get(task_name)
             if not tool:
@@ -158,39 +279,39 @@ class ResearchPipeline:
                         "data": {}
                         })
             
-            for q in queries:
-                try:
-                    result_json = tool(q, results, debug)
-                except RuntimeError as e:
-                    print(f"Error in execute tasks: {e}")
+
+            try:
+                result_json = tool(t["query"], results, debug)
+            except RuntimeError as e:
+                print(f"Error in execute tasks: {e}")
             await send_sse({"event": "update",
                 "type": "subtaskUpdate",
                 "status": "completed",
                 "id": str(uuid.uuid4()),
                 "task": TASK_NAME_MAP[task_name],
-                "data": results
+                "data": {}
             })
 
         return results
 
-    async def execute_research_plan(self, query: str, tasks: List[Dict[str, Any]], callback_url: Callable) -> str:
+    async def execute_research_plan(self, original_query, query: str, tasks: List[Dict[str, Any]], callback_url: Callable) -> str:
         results = await self.execute_tasks(query, tasks, callback_url)
         
-        await send_sse({"event": "update",
-                        "type": "subtaskUpdate",
-                        "status": "in-progress",
-                        "id": str(uuid.uuid4()),
-                        "task": "Generate Final Analysis",
-                        "data": {}
-                        })
-        results = get_final_analysis(query, results)
-        await send_sse({"event": "update",
-                        "type": "subtaskUpdate",
-                        "status": "completed",
-                        "id": str(uuid.uuid4()),
-                        "task": "Generate Final Analysis",
-                        "data": {}
-                        })
+        # await send_sse({"event": "update",
+        #                 "type": "subtaskUpdate",
+        #                 "status": "in-progress",
+        #                 "id": str(uuid.uuid4()),
+        #                 "task": "Generate Final Analysis",
+        #                 "data": {}
+        #                 })
+        # results = get_final_analysis(query, results)
+        # await send_sse({"event": "update",
+        #                 "type": "subtaskUpdate",
+        #                 "status": "completed",
+        #                 "id": str(uuid.uuid4()),
+        #                 "task": "Generate Final Analysis",
+        #                 "data": {}
+        #                 })
 
         # Send final result via webhook
         import pdb
@@ -220,23 +341,54 @@ class ResearchPipeline:
             logging.error(f"Failed to send final result: {str(e)}")
 
         # print(f"{results['workbookData']}")
-
         return results
 
 
 async def run_research(query: str, callback_url: Callable):
     pipeline = ResearchPipeline()
     try:
-        plan = pipeline.generate_research_plan(query)
-        front_end_plan_map = [{"task": TASK_NAME_MAP[t["task"]], "description": t["description"]} for t in plan]
+        original_query = query
+        pattern = determine_query_pattern(query)
+        pattern = pattern.lstrip().rstrip()
+        
+        if pattern.lower() == 'get_list_of_companies':
+            print("Calling 'get_list_of_companies'")
+            companies = get_list_of_companies(query)
+            queries = map_list_of_companies_and_query_to_list_of_queries(query, companies)
+        elif pattern.lower() == 'get_competitors':
+            print("Calling 'get_competitors'")
+            competitors = get_competitors(query)
+            queries = map_competitors_and_query_to_list_of_queries(query, competitors) 
+        elif pattern.lower() == 'split_companies':
+            queries = split_companies(query)
+        elif pattern.lower() == 'neither':
+            queries = preprocess_user_query(query)
+        else: 
+            raise Exception(f"Got pattern from query pattern of {pattern.lower()}")
+
+        master_plan = []
+        for query in queries:
+            # import pdb; pdb.set_trace()
+            plan = pipeline.generate_research_plan(query)
+            processed_plan = []
+            for task in plan:
+                task["query"] = query
+                processed_plan.append(task)
+            master_plan.extend(processed_plan)
+
+        
+
+        master_plan = [{"task": t["task"], "query": t["query"], "description": t["description"], "status": "pending"} for t in master_plan if t["task"] != "get_final_analysis"] + [{"task": "get_final_analysis", "query": original_query, "description": "Produce a final analysis", "status": "pending"}]
+        # import pdb; pdb.set_trace()
+        front_end_plan_map = [{"task": TASK_NAME_MAP[t["task"]], "description": t["description"]} for t in master_plan]
         await send_sse(
             {"event": "update",
             "type": "researchPlan",
             "data": {
-                "researchPlan": [{"task": TASK_NAME_MAP[t["task"]], "description": t["description"]} for t in plan]
+                "researchPlan": front_end_plan_map
             }}
         )
-        await pipeline.execute_research_plan(query, plan, callback_url)
+        await pipeline.execute_research_plan(original_query, query, master_plan, callback_url)
     except Exception as e:
         logging.error(f"An error occurred during research execution: {str(e)}", exc_info=True)
         try:
@@ -250,7 +402,7 @@ async def run_research(query: str, callback_url: Callable):
 
 @app.post("/api/research/start")
 async def start_research(request: ResearchRequest, background_tasks: BackgroundTasks):
-    # print(f"request: {request}")
+    print(f"request: {request}")
     task_id = str(uuid.uuid4())
     background_tasks.add_task(run_research, request.query, send_sse)
     return {"task_id": task_id, "message": "Research started"}
@@ -267,6 +419,7 @@ async def message_stream(request: Request):
                 break
 
             if latest_sse_data:
+                # print(f"latest_sse_data: {latest_sse_data}, type(latest_sse_data): {type(latest_sse_data)}")
                 yield {
                     "event": "update",
                     "id": str(uuid.uuid4()),

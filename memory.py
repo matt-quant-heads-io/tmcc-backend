@@ -25,6 +25,7 @@ class NashMemory:
             "version": "v1.1"
             }
         self.memory = Memory.from_config(config)
+        self.messages = []
         self.client = OpenAI()
         self.app_id = "tmcc-backend"
 

@@ -654,6 +654,7 @@ def do_local_calculate(question, financials, debug=False):
         user query: "Show me the percentage change of aapl's gross margins versus Intel and Microsoft over the past 3 years?", data: ['gross_profit', 'revenues'], answer: "financials['gross_margin'] = financials['gross_profit'] / financials['revenues']; financials['gross_margin_change'] = financials['gross_margin'].pct_change(periods=-1).round(2).dropna()"
         user query: "Calculate the correlation between the % change of aapl’s gross margins and its inventory ratio for 2022.", data: ['gross_profit', 'revenues', 'cost_of_revenue', 'inventory'], answer: "financials['gross_margin'] = financials['gross_profit'] / financials['revenues']; financials['gross_margin_change'] = financials['gross_margin'].pct_change(periods=-1).round(2).dropna(); financials['inventory_ratio'] = financials['inventory'] / financials['revenues']; financials['inventory_ratio_change'] = financials['inventory_ratio'].pct_change(periods=-1).round(2).dropna(); financials['correlation'] = financials['gross_margin_change'].corr(financials['inventory_ratio_change'])
         user query: "whats the variance between the inventory ratio and return on assets growth for first 3 quarters of 2021 for cat?", data: ['inventory', 'totalAssets', 'netIncome', 'Fiscal Date'], answer: "financials['inventory_ratio'] = financials['inventory'] / financials['totalAssets']; financials['return_on_assets'] = financials['netIncome'] / financials['totalAssets']; financials['return_on_assets_growth'] = financials['return_on_assets'].pct_change(periods=-1).round(2).dropna(); financials['variance'] = financials['inventory_ratio'].var() - financials['return_on_assets_growth'].var()"
+        user query: "If we exclude the impact of M&A, which segment has dragged down MMM's overall growth in 2022?", data: ['revenue'], answer: financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
         """
 
         prompt = """
@@ -752,6 +753,26 @@ def get_research_plan(question, debug=False):
     Use the JSON as shown in the below examples when producing your response. Your response should be a valid JSON object.
 
     Task Breakdown Examples:
+    {
+        "query": "what's the status of AAPL’s anti-trust cases since 2022? How has the stock performed since then?",
+        "tasks": [
+            {
+                "task": "perform_vector_search",
+                "description": "Perform a vector search of the internal market database",
+                "status": "pending"
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
     {
         "query": "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?",
         "tasks": [
@@ -1489,7 +1510,7 @@ def do_calculate_for_get_market_data(question, df_market_data):
         print(f"'user query': {question}")
         print(f"'data': {list(df_market_data.columns)}")
         print(f"'answer': {new_response}")
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
 
         exec(new_response)
 
@@ -1506,6 +1527,29 @@ def do_calculate_for_get_market_data(question, df_market_data):
     except Exception as e:
         print(f"Error inside do_calculate_for_get_market_data: {e}")
         return df_market_data
+
+
+def realign_market_df_to_closest_dt_from_upstream_df(df, company_financials_df, merge_key):
+    temp_company_financials_df = company_financials_df.copy()
+    temp_df = df.copy()
+    df_closest_date_index_to_other_index = []
+    actual_date_from_other_index = []
+    temp_company_financials_df["RefDate"] = pd.to_datetime(temp_company_financials_df[merge_key])
+    temp_df["RefDate"] = pd.to_datetime(temp_df[merge_key])
+    for date_ref in temp_company_financials_df["RefDate"].values:
+        df_closest_date_index_to_other_index.append(temp_df["RefDate"][(temp_df["RefDate"] - date_ref).abs().idxmin()].strftime('%Y-%m-%d'))
+        actual_date_from_other_index.append(str(date_ref).split('T')[0])
+
+    # import pdb; pdb.set_trace()
+    df = df[df[merge_key].isin(df_closest_date_index_to_other_index)] 
+    df[merge_key] = actual_date_from_other_index
+    
+    return df, company_financials_df
+
+
+
+
+
 
 def should_calculate_for_get_market_data(question, df_columns):
     try:
@@ -1646,6 +1690,45 @@ def get_market_data(question, results, debug=False):
                     del results["QualAndQuant"][ticker]
             else:
                 solo_call = True
+        elif len(results["VectorSearch"]) > 0:
+            if ticker.upper() in results["VectorSearch"]:
+                import pdb; pdb.set_trace()
+                vector_search_df = results["VectorSearch"][ticker.upper()] 
+                # company_financials_df.set_index(pd.RangeIndex(len(company_financials_df)), inplace=True)
+                merge_key = None
+                if 'Q' in vector_search_df['report_date'][0]:
+                    merge_key = 'Calendar Date'
+                else:
+                    merge_key = f'report_date'
+
+
+                vector_search_df[merge_key] = pd.to_datetime(vector_search_df[merge_key]).dt.strftime('%Y-%m-%d')
+                to_date = vector_search_df[merge_key][0]
+                from_date = vector_search_df[merge_key][len(vector_search_df)-1]
+                df = yahooFinance.Ticker(ticker).history(period="max")
+                
+                if len(df) > 0:
+                    df.reset_index(inplace=True)
+                    df.rename({'Date': merge_key}, axis=1, inplace=True)
+                    df[merge_key] = df[merge_key].dt.strftime("%Y-%m-%d")
+                    df = df[::-1]
+                    all_market_data_columns = list(df.columns)
+                    calculation_required = should_calculate_for_get_market_data(question, all_market_data_columns)
+                    print(f"calculation_required: {calculation_required}")
+                    if calculation_required:
+                        df = do_calculate_for_get_market_data(question, df)
+                        
+                    df, vector_search_df = realign_market_df_to_closest_dt_from_upstream_df(df, vector_search_df, merge_key)
+                    df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    vector_search_df = vector_search_df.merge(df, left_on=merge_key, right_on=merge_key)
+                    results["Context"].append(
+                        {f"{question} (ticker={ticker})" : vector_search_df}
+                    )
+                    results["finalAnalysis"]["tables"][ticker.upper()] = vector_search_df
+                    results['MarketData'][ticker.upper()] = vector_search_df
+                    del results["VectorSearch"][ticker]
+            else:
+                solo_call = True
         elif len(results["GetEstimates"]) > 0:
             if ticker in results["GetEstimates"]:
                 estimates_df = results["GetEstimates"][ticker] 
@@ -1680,7 +1763,7 @@ def get_market_data(question, results, debug=False):
                 solo_call = True
         elif len(results["GetCompanyFinancials"]) > 0:
             if ticker.upper() in results["GetCompanyFinancials"]:
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 company_financials_df = results["GetCompanyFinancials"][ticker.upper()] 
                 # company_financials_df.set_index(pd.RangeIndex(len(company_financials_df)), inplace=True)
                 merge_key = None
@@ -1694,25 +1777,19 @@ def get_market_data(question, results, debug=False):
                 to_date = company_financials_df[merge_key][0]
                 from_date = company_financials_df[merge_key][len(company_financials_df)-1]
                 df = yahooFinance.Ticker(ticker).history(period="max")
-                import pdb; pdb.set_trace()
+                
                 if len(df) > 0:
                     df.reset_index(inplace=True)
                     df.rename({'Date': merge_key}, axis=1, inplace=True)
                     df[merge_key] = df[merge_key].dt.strftime("%Y-%m-%d")
                     df = df[::-1]
-                    # df['60 Day Performance'] = df['Close'].pct_change(-60)
-                    # df['30 Day Performance'] = df['Close'].pct_change(-30)
                     all_market_data_columns = list(df.columns)
                     calculation_required = should_calculate_for_get_market_data(question, all_market_data_columns)
                     print(f"calculation_required: {calculation_required}")
                     if calculation_required:
                         df = do_calculate_for_get_market_data(question, df)
-                        if "report_date" not in company_financials_df.columns:
-                            company_financials_df = company_financials_df.T
-                        print(f"company_financials_df after do_calculate_for_get_market_data: {company_financials_df}")
-                    
-                    
-                    df = df[df[merge_key].isin(company_financials_df[merge_key])]
+                        
+                    df, company_financials_df = realign_market_df_to_closest_dt_from_upstream_df(df, company_financials_df, merge_key)
                     df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
                     company_financials_df = company_financials_df.merge(df, left_on=merge_key, right_on=merge_key)
                     results["Context"].append(
@@ -3072,16 +3149,25 @@ def perform_vector_search(question, results, debug=False):
             return results
 
         citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+        citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
         citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
         
         # citations = add_highlighting_to_citations_pdfs(citations[:10])
         
         if "citations" not in results["finalAnalysis"]:
             results["finalAnalysis"]["citations"] = []    
-        results["finalAnalysis"]["citations"].extend(citations)
+        results["finalAnalysis"]["citations"].extend([citations])
 
         if "insights" not in results["finalAnalysis"]:
             results["finalAnalysis"]["insights"] = [] 
+
+        df_citations = pd.DataFrame.from_records(citations_for_backend)
+        df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations["report_date"])
+        df_citations.sort_values(by=["temp_date_sort_key"], axis=1, ascending=False, inplace=True)
+        df_citations.drop("temp_date_sort_key", inplace=True)
+        print(f"df_citations:\n{df_citations.head()}")
+        results["VectorSearch"][ticker.upper()] = df_citations
+        
         
         response = '\n\n'.join([c["text"] for c in citations])
         results["Context"].append(
@@ -3587,7 +3673,7 @@ def merge_frames(results, debug=False):
         for ticker, frame in ticker_frames_dicts.items():
             merged_frames.append(frame)
        
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         merged_frames = pd.concat(merged_frames)
         merged_frames.replace(np.nan, None, inplace=True)
         merged_frames.replace(np.inf, None, inplace=True)

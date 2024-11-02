@@ -201,7 +201,7 @@ class ResearchPipeline:
             with open(DEBUG_ABS_FILE_PATH, "w") as f:
                 json.dump({"function": "execute_tasks", "inputs": [query, tasks], "outputs": []}, f)
         
-        results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "Tables": {}}
+        results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "VectorSearch": {}, "Tables": {}}
         context = {"context": []}
         
         # processed_user_query, entities = preprocess_user_query(query)

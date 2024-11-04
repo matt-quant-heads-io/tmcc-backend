@@ -201,7 +201,7 @@ class ResearchPipeline:
             with open(DEBUG_ABS_FILE_PATH, "w") as f:
                 json.dump({"function": "execute_tasks", "inputs": [query, tasks], "outputs": []}, f)
         
-        results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "VectorSearch": {}, "Tables": {}}
+        results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "MarketDataForBacktest": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "VectorSearch": {}, "Tables": {}}
         context = {"context": []}
         
         # processed_user_query, entities = preprocess_user_query(query)
@@ -366,19 +366,30 @@ async def run_research(query: str, callback_url: Callable):
         else: 
             raise Exception(f"Got pattern from query pattern of {pattern.lower()}")
 
+
+        # TODO: uncomment this after implementing get_estimates
+        # ["get_sec_financials", "perform_news_search_via_google" , "get_estimates", "perform_vector_search", "perform_quantitative_vector_search", "get_market_data", "run_backtest"]
+        task_universe = ["get_sec_financials", "perform_news_search_via_google" , "perform_vector_search", "perform_quantitative_vector_search", "get_market_data", "run_backtest"]
         master_plan = []
         for query in queries:
             # import pdb; pdb.set_trace()
             plan = pipeline.generate_research_plan(query)
+            plan = [t for t in plan if t["task"] != 'get_final_analysis']
             processed_plan = []
-            for task in plan:
-                task["query"] = query
-                processed_plan.append(task)
+            for a_task in task_universe:
+                for t in plan:
+                    if t["task"] == a_task:
+                        t["query"] = query
+                        processed_plan.append(t)
+            # processed_plan = []
+            # for task in plan:
+            #     task["query"] = query
+            #     processed_plan.append(task)
             master_plan.extend(processed_plan)
 
         
-
-        master_plan = [{"task": t["task"], "query": t["query"], "description": t["description"], "status": "pending"} for t in master_plan if t["task"] != "get_final_analysis"] + [{"task": "get_final_analysis", "query": original_query, "description": "Produce a final analysis", "status": "pending"}]
+        # import pdb; pdb.set_trace()
+        master_plan += [{"task": "get_final_analysis", "query": original_query, "description": "Produce a final analysis", "status": "pending"}]
         # import pdb; pdb.set_trace()
         front_end_plan_map = [{"task": TASK_NAME_MAP[t["task"]], "description": t["description"]} for t in master_plan]
         await send_sse(

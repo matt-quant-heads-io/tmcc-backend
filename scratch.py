@@ -145,11 +145,18 @@ def summarize_content(content, objective):
     return summary_chain.run(input_documents=docs, objective=objective)
 
 
+from datetime import datetime
+
+date_string = "Feb 16, 2024"
+date_object = datetime.strptime(date_string, "%b %d, %Y")
+
+
 def perform_news_search_via_google(question, results, time_frame='m', debug=False):
     # Step 1: Perform Google search
     search_results = google_search(question, time_frame)
     entities = extract_entities_from_user_query(question)
     tickers = [e["value"] for e in entities if e["entity"] == "ticker"]
+    ticker = tickers[0]
     if len(tickers) == 0:
         tickers = ""
     elif len(tickers) == 1:
@@ -163,6 +170,7 @@ def perform_news_search_via_google(question, results, time_frame='m', debug=Fals
     for result in search_results.get('organic', [])[:3]:  # Process top 3 results
         url = result.get('link')
         if url:
+            report_date = str(datetime.strptime(result.get('date'), "%b %d, %Y")).split(' ')[0]
             content = web_scraping(url)
             summary = summarize_content(
                 content, f"Summarize the key points related to: {question}"
@@ -170,10 +178,12 @@ def perform_news_search_via_google(question, results, time_frame='m', debug=Fals
             summaries.append({
                 'title': result.get('title'),
                 'url': url,
-                'summary': summary
+                'summary': summary,
+                'report_date': report_date
             })
 
             new_citation = {
+                "report_date": report_date,
                 "id": str(uuid.uuid4()),
                 "logo": "",
                 "page_number": "",
@@ -212,9 +222,92 @@ def perform_news_search_via_google(question, results, time_frame='m', debug=Fals
     
     if "citations" not in results["finalAnalysis"]:
         results["finalAnalysis"]["citations"] = []    
+
     results["finalAnalysis"]["citations"].extend(citations)
+    df_citations = pd.DataFrame.from_records(citations)
+    df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations["report_date"])
+    df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+    df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+    df_citations.reset_index(drop=True, inplace=True)
+    results["GetNews"][ticker] = df_citations
+    results["finalAnalysis"]["tables"][ticker] = df_citations
+
+    import pdb; pdb.set_trace()
 
     return results
+
+
+# def perform_news_search_via_google(question, results, time_frame='m', debug=False):
+#     # Step 1: Perform Google search
+#     search_results = google_search(question, time_frame)
+#     entities = extract_entities_from_user_query(question)
+#     tickers = [e["value"] for e in entities if e["entity"] == "ticker"]
+#     if len(tickers) == 0:
+#         tickers = ""
+#     elif len(tickers) == 1:
+#         tickers = tickers[0]
+#     else:
+#         tickers = ','.join(tickers)
+
+#     # Step 2: Scrape and summarize top articles
+#     summaries = []
+#     citations = []
+#     import pdb; pdb.set_trace()
+#     for result in search_results.get('organic', [])[:3]:  # Process top 3 results
+#         url = result.get('link')
+#         if url:
+#             content = web_scraping(url)
+#             summary = summarize_content(
+#                 content, f"Summarize the key points related to: {question}"
+#             )
+#             summaries.append({
+#                 'title': result.get('title'),
+#                 'url': url,
+#                 'summary': summary
+#             })
+
+#             new_citation = {
+#                 "id": str(uuid.uuid4()),
+#                 "logo": "",
+#                 "page_number": "",
+#                 "url": url,#f"https://{BUCKET_FOR_HIGHLIGHTED_DOCS}.s3.amazonaws.com/{highlighted_pdf_filename}", #pdf_to_save_pdf_before_upload_to_s3,#
+#                 "title": result.get('title'),
+#                 "company": tickers,
+#                 "importance": 1,
+#                 "text": summary
+#             }
+#             citations.append(new_citation)
+
+#     # Step 3: Synthesize findings
+#     synthesis_prompt = f"""
+#     Based on the following summaries of Bloomberg articles about "{question}":
+
+#     {json.dumps(summaries, indent=2)}
+
+#     Please provide a comprehensive analysis that:
+#     1. Identifies the main trends or themes across the articles
+#     2. Highlights any conflicting viewpoints or debates
+#     3. Summarizes the overall impact or implications discussed
+#     4. Suggests potential future developments or areas for further research
+
+#     Your analysis should be well-structured, insightful, and about 500 words long.
+#     """
+
+#     synthesis = llm.predict(synthesis_prompt)
+#     results["Context"].append({f"Response from query {question}": {
+#         'query': question,
+#         'time_frame': time_frame,
+#         'summaries': summaries,
+#     }})
+
+#     if "finalAnalysis" not in results:
+#         results["finalAnalysis"] = {}
+    
+#     if "citations" not in results["finalAnalysis"]:
+#         results["finalAnalysis"]["citations"] = []    
+#     results["finalAnalysis"]["citations"].extend(citations)
+
+#     return results
 
 
 # def preprocess_user_query(question, debug=False):
@@ -269,6 +362,7 @@ def map_list_of_companies_and_query_to_list_of_queries(query, companies, debug=F
     Examples:
     query: "Of the largest technology stocks in the dow 30, which have revenue growth exceeding 10%?", companies: ['BA', 'LMT'], answer: ["What's BA's revenue growth? Does it exceed 10%?", "What's LMT's revenue growth? Does it exceed 10%?"]
     query: "Of the largest technology stocks how many times was macro concerns mentioned in their filings since 2023? What has been their coinciding price performance?", companies: ['TSLA', 'MSFT', 'AAPL', 'CRM'], answer: ["How many times did TSLA mention macro concerns in their filings since 2023? How has this coincided with their stock performance?", "How many times did MSFT mention macro concerns in their filings since 2023? How has this coincided with their stock performance?", "How many times did AAPL mention macro concerns in their filings since 2023? How has this coincided with their stock performance?", "How many times did CRM mention macro concerns in their filings since 2023? How has this coincided with their stock performance?"]
+    query: "run a backtest on the tech stocks of the dow 30 assuming i buy a company every time they mention macro concerns in a filings", companies: ['AAPL', 'AMGN', 'CRM', 'CSCO', 'INTC', 'MSFT'], answer: ["Run a backtest on AAPL, buying shares every time they mention macro concerns in their filings.", "Run a backtest on AMGN, buying shares every time they mention macro concerns in their filings.", "Run a backtest on CRM, buying shares every time they mention macro concerns in their filings.", "Run a backtest on CSCO, buying shares every time they mention macro concerns in their filings.", "Run a backtest on INTC, buying shares every time they mention macro concerns in their filings.", "Run a backtest on MSFT, buying shares every time they mention macro concerns in their filings."]
     """
 
     prompt = """
@@ -280,26 +374,19 @@ def map_list_of_companies_and_query_to_list_of_queries(query, companies, debug=F
         model="gpt-4o",
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt.format(question=question, companies=companies)}
+            {"role": "user", "content": prompt.format(question=query, companies=companies)}
         ],   
     )
 
     try:
         # import pdb; pdb.set_trace()
-        # response = json.loads(response.to_json())["choices"][0]["message"]["content"]
-        # processed_queries = ast.literal_eval(response[response.find("["):response.find("]")+1])
-        # entities = extract_entities_from_user_query(processed_queries, debug)
-        # if debug:
-        #     with open(DEBUG_ABS_FILE_PATH, "a") as f:
-        #         f.write(json.dumps({"function": "preprocess_user_query", "input": [question], "processed_query": processed_query, "entities": entities}, indent=6))
-        # return processed_queries, entities
-        import pdb; pdb.set_trace()
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
         processed_queries = ast.literal_eval(response)
+        processed_queries = [p.lstrip().rstrip() for p in processed_queries]
         return processed_queries
     except Exception as e:
         print(f"Error inside map_list_of_companies_and_query_to_list_of_queries: {e}")
-        return []
+        return processed_queries
 
 
 
@@ -362,6 +449,7 @@ def split_companies(query, debug=False):
     query: "how has Ford's revenue trended since 2020? what has been the stock performance over that time period? Compare to TSLA", answer: ["how has F's revenue trended since 2020? what has been the stock performance over that time period?", "how has TSLA's revenue trended since 2020? what has been the stock performance over that time period?"]
     query: "how has Ford's revenue trended since 2020? what has been the stock performance over that time period? Compare to TESLA", answer: ["how has F's revenue trended since 2020? what has been the stock performance over that time period?", "how has TSLA's revenue trended since 2020? what has been the stock performance over that time period?"]
     query: "Compare Ford versus Tesla's revenue growth and stock performance since 2020? Which has appreciated more and by how much?", answer: ["What's F's revenue growth and stock performance since 2020?", "What's TSLA's revenue growth and stock performance since 2020?"]
+    query: "How do the debt levels of Apple and MSFT compare?", answer: ["What are the debt levels of AAPL?", "What are the debt levels of MSFT?"]
     """
 
     prompt = """
@@ -643,6 +731,7 @@ def do_local_calculate(question, financials, debug=False):
         user query: "how did msft's net cash provided by operating activities change from q3 2020 to q1 2021?", data: ['net_cash_flow_from_operating_activities'], answer: "financials['net_cash_flow_from_operating_activities_change'] = financials['net_cash_flow_from_operating_activities'].pct_change(periods=-1).round(2).dropna()"        
         user query: "what's amzn's revenue growth during 2023 versus its comps", data: ['revenue'], answer: "financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
         user query: "Compare the research and development investments as a percentage of revenue for J&J and Merck over the past three years. Historically how have their drug launches impacted revenue growth?", data: ['revenues', 'research_and_development'], answer: "financials['research_and_development_to_revenue_pct'] = financials['research_and_development'] / financials['revenues']"   
+        user query: "How has AAPL's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if I bought the stock each time?", data: ['revenue', 'Fiscal Date'], answer: financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
         user query: "Compare the research and development investments as a percentage of revenue for J&J and Merck over the past three years. Historically how have their drug launches impacted revenue growth?", data: ['revenues', 'research_and_development'], answer: "financials['research_and_development_to_revenue_pct'] = financials['research_and_development'] / financials['revenues']"
         user query: "How has apple’s gross margins trended compared to Intel and Microsoft’s over the past 3 years?", data: ['gross_profit', 'revenues'], answer: "financials['gross_margin_change'] = financials['gross_margin'] = financials['gross_profit'] / financials['revenues'];  financials.drop(['revenues', 'gross_profit'], axis=1, inplace=True)"
         user query: "Examine the changes in Boeing's debt-to-equity ratio over the last five years. What are the implications for its financial stability compared to competitors in the aerospace industry?", data: ['long_term_debt', 'equity'], answer: "financials['debt_to_equity_ratio'] = financials['long_term_debt'] / financials['equity']"
@@ -655,6 +744,9 @@ def do_local_calculate(question, financials, debug=False):
         user query: "Calculate the correlation between the % change of aapl’s gross margins and its inventory ratio for 2022.", data: ['gross_profit', 'revenues', 'cost_of_revenue', 'inventory'], answer: "financials['gross_margin'] = financials['gross_profit'] / financials['revenues']; financials['gross_margin_change'] = financials['gross_margin'].pct_change(periods=-1).round(2).dropna(); financials['inventory_ratio'] = financials['inventory'] / financials['revenues']; financials['inventory_ratio_change'] = financials['inventory_ratio'].pct_change(periods=-1).round(2).dropna(); financials['correlation'] = financials['gross_margin_change'].corr(financials['inventory_ratio_change'])
         user query: "whats the variance between the inventory ratio and return on assets growth for first 3 quarters of 2021 for cat?", data: ['inventory', 'totalAssets', 'netIncome', 'Fiscal Date'], answer: "financials['inventory_ratio'] = financials['inventory'] / financials['totalAssets']; financials['return_on_assets'] = financials['netIncome'] / financials['totalAssets']; financials['return_on_assets_growth'] = financials['return_on_assets'].pct_change(periods=-1).round(2).dropna(); financials['variance'] = financials['inventory_ratio'].var() - financials['return_on_assets_growth'].var()"
         user query: "If we exclude the impact of M&A, which segment has dragged down MMM's overall growth in 2022?", data: ['revenue'], answer: financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
+        user query: "How has AAPL's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if I bought the stock each time?", data: ['revenue', 'Fiscal Date'], answer: financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
+        user query: "What is ADBE's year-over-year change in unadjusted operating income from FY2015 to FY2016 (in units of percents and round to one decimal place)? Give a solution to the question by using the income statement.", data: ['operatingIncome', 'Calendar Date'], answer: "financials['operating_income_yoy_change'] = financials['operatingIncome'].pct_change(periods=-4).round(3).mul(100)"
+        user query: "How much has MSFT spent on research and development as a percentage of R&D for each of the past 5 years? And what products have been launched in that time frame and what has been their contribution to revenue?", data: ['researchAndDevelopmentExpenses', 'revenue', 'Fiscal Date'], answer: "financials['research_and_development_pct'] = financials['researchAndDevelopmentExpenses'] / financials['revenue']"    
         """
 
         prompt = """
@@ -749,10 +841,228 @@ def get_research_plan(question, debug=False):
     'get_market_data': Pull market data for relevant symbol(s)
     'perform_quantitative_vector_search': Performs quantitative queries against internal market databases
     'perform_news_search_via_google': Perform a news search on a company or event
+    'run_backtest': Run a backtest on the data
 
     Use the JSON as shown in the below examples when producing your response. Your response should be a valid JSON object.
 
     Task Breakdown Examples:
+    {
+        "query": "Run a backtest on CSCO, buying shares every time they mention macro concerns in their filings.",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "run_backtest",
+                "description": "Perform a backtest und the supplied parameters",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "Run a backtest on MSFT, buying shares every time they mention macro concerns in their filings.",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "run_backtest",
+                "description": "Perform a backtest und the supplied parameters",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "How much has MSFT spent on research and development as a percentage of R&D for each of the past 5 years? And what products have been launched in that time frame and what has been their contribution to revenue?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending"
+            },
+            {
+                "task": "perform_vector_search",
+                "description": "Perform a vector search of the internal market database",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": What is the FY2019 fixed asset turnover ratio for Activision Blizzard? Fixed asset turnover ratio is defined as: FY2019 revenue / (average PP&E between FY2018 and FY2019). Round your answer to two decimal places. Base your judgments on the information provided primarily in the statement of income and the statement of financial position.,
+        "tasks": [
+                {
+                    "task": "get_sec_financials",
+                    "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                    "status": "pending"
+                },
+                {
+                    "task": "get_final_analysis",
+                    "description": "Mold the information into a final analysis",
+                    "status": "pending"
+                }
+        ]
+    
+    }
+    {
+        "query": "Does 3M maintain a stable trend of dividend distribution?",
+        "tasks": [
+            {
+                "task": "perform_vector_search",
+                "description": "Perform a vector search of the internal market database",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+
+    
+    }
+    {
+        "query": "Which debt securities are registered to trade on a national securities exchange under 3M's name as of Q2 of 2023?",
+        "tasks": [
+            {
+                "task": "perform_vector_search",
+                "description": "Perform a vector search of the internal market database",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    
+    }
+    {
+        "query": "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?",
+        "tasks": [
+            {
+                    "task": "get_sec_financials",
+                    "description": "For each identified company, gather recent financial statements, focusing on income statements over the last few quarters or years.",
+                    "status": "pending"
+            },
+            {
+                    "task": "perform_quantitative_vector_search",
+                    "description": "Perform computations atop vector search",
+                    "status": "pending
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "run_backtest",
+                "description": "Perform a backtest under the supplied parameters",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    
+    }
+    {
+        "query": "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "For each identified company, gather recent financial statements, focusing on income statements over the last few quarters or years.",
+                "status": "pending"
+            },
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "run_backtest",
+                "description": "Perform a backtest under the supplied parameters",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    
+    }
+    {
+        "query": "what's the status of AAPL’s anti-trust cases since 2022? How has the stock performed since then?",
+        "tasks": [
+            {
+                "task": "perform_vector_search",
+                "description": "Perform a vector search of the internal market database",
+                "status": "pending"
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": What is the FY2019 fixed asset turnover ratio for Activision Blizzard? Fixed asset turnover ratio is defined as: FY2019 revenue / (average PP&E between FY2018 and FY2019). Round your answer to two decimal places. Base your judgments on the information provided primarily in the statement of income and the statement of financial position.,
+        "tasks": [
+                {
+                    "task": "get_sec_financials",
+                    "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                    "status": "pending"
+                },
+                {
+                    "task": "get_final_analysis",
+                    "description": "Mold the information into a final analysis",
+                    "status": "pending"
+                }
+            ]
+    
+    }
     {
         "query": "what's the status of AAPL’s anti-trust cases since 2022? How has the stock performed since then?",
         "tasks": [
@@ -1489,6 +1799,7 @@ def do_calculate_for_get_market_data(question, df_market_data):
         'user query': "Compare TSLA's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"        
         'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=-20)[::-1].cumsum()[::-1].round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).cumsum().round(2);" 
         'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=-20)[::-1].cumsum()[::-1].round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).cumsum().round(2);"
+        'user query': "How has apple’s stock performed post 2021 in the following quarters after management has referenced macro concerns?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         """
 
         prompt = """
@@ -1542,13 +1853,9 @@ def realign_market_df_to_closest_dt_from_upstream_df(df, company_financials_df, 
 
     # import pdb; pdb.set_trace()
     df = df[df[merge_key].isin(df_closest_date_index_to_other_index)] 
-    df[merge_key] = actual_date_from_other_index
+    df[merge_key] = list(set(actual_date_from_other_index))
     
     return df, company_financials_df
-
-
-
-
 
 
 def should_calculate_for_get_market_data(question, df_columns):
@@ -1629,70 +1936,107 @@ def get_market_data(question, results, debug=False):
             else:
                 solo_call = True
         elif len(results["GetNews"]) > 0:
-            if ticker in results["GetNews"]:
-                news_df = results["GetNews"][ticker]
+            if ticker.upper() in results["GetNews"]:
+                news_df = results["GetNews"][ticker.upper()] 
+                # company_financials_df.set_index(pd.RangeIndex(len(company_financials_df)), inplace=True)
                 merge_key = None
                 if 'Q' in news_df['report_date'][0]:
                     merge_key = 'Calendar Date'
                 else:
                     merge_key = f'report_date'
 
+
                 news_df[merge_key] = pd.to_datetime(news_df[merge_key]).dt.strftime('%Y-%m-%d')
                 to_date = news_df[merge_key][0]
-                from_date = news_df[merge_key][-1]
+                from_date = news_df[merge_key][len(news_df)-1]
                 df = yahooFinance.Ticker(ticker).history(period="max")
+                import pdb; pdb.set_trace()
                 if len(df) > 0:
                     df.reset_index(inplace=True)
                     df.rename({'Date': merge_key}, axis=1, inplace=True)
                     df[merge_key] = df[merge_key].dt.strftime("%Y-%m-%d")
                     df = df[::-1]
-                    df['60 Day Performance'] = df['Close'].pct_change(-60)
-                    df['30 Day Performance'] = df['Close'].pct_change(-30)
-                    df = df[df[merge_key].isin(news_df[merge_key])]
-                    df = df[[c for c in df.columns if c not in ['Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    all_market_data_columns = list(df.columns)
+                    calculation_required = should_calculate_for_get_market_data(question, all_market_data_columns)
+                    print(f"calculation_required: {calculation_required}")
+                    if calculation_required:
+                        df = do_calculate_for_get_market_data(question, df)
+                        
+                    
+                    backtest_df = df.copy()
+                    backtest_news_df = news_df.copy()
+                    # NOTE: Add in highest high (lowest low) over 1 QTR & 2 QTR
+                    backtest_df['1 QTR'] = backtest_df['Close'].pct_change(-90)
+                    # backtest_df['2 QTR'] = backtest_df['Close'].pct_change(-180)
+                    backtest_df, backtest_news_df = realign_market_df_to_closest_dt_from_upstream_df(backtest_df, backtest_news_df, merge_key)
+                    backtest_df = backtest_df[[c for c in backtest_df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    backtest_news_df = backtest_news_df.merge(backtest_df, left_on=merge_key, right_on=merge_key)
+                    results['MarketDataForBacktest'][ticker.upper()] = backtest_news_df
+
+
+                    df, news_df = realign_market_df_to_closest_dt_from_upstream_df(df, news_df, merge_key)
+                    df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
                     news_df = news_df.merge(df, left_on=merge_key, right_on=merge_key)
-                    # news_df.set_index("report_date", inplace=True)
                     results["Context"].append(
                         {f"{question} (ticker={ticker})" : news_df}
                     )
-                    results['MarketData'][ticker] = news_df
+                    results["finalAnalysis"]["tables"][ticker.upper()] = news_df
+                    results['MarketData'][ticker.upper()] = news_df
                     del results["GetNews"][ticker]
             else:
                 solo_call = True
         elif len(results["QualAndQuant"]) > 0:
-            if ticker in results["QualAndQuant"]:
-                qual_and_quant_df = results["QualAndQuant"][ticker]
+            if ticker.upper() in results["QualAndQuant"]:
+                qual_and_quant_vector_search_df = results["QualAndQuant"][ticker.upper()] 
+                # company_financials_df.set_index(pd.RangeIndex(len(company_financials_df)), inplace=True)
                 merge_key = None
-                if 'Q' in qual_and_quant_df['report_date'][0]:
+                if 'Q' in qual_and_quant_vector_search_df['report_date'][0]:
                     merge_key = 'Calendar Date'
                 else:
                     merge_key = f'report_date'
 
-                qual_and_quant_df[merge_key] = pd.to_datetime(qual_and_quant_df[merge_key]).dt.strftime('%Y-%m-%d')
-                to_date = qual_and_quant_df[merge_key][0]
-                from_date = qual_and_quant_df[merge_key][-1]
+                import pdb; pdb.set_trace()
+                qual_and_quant_vector_search_df[merge_key] = pd.to_datetime(qual_and_quant_vector_search_df[merge_key]).dt.strftime('%Y-%m-%d')
+                to_date = qual_and_quant_vector_search_df[merge_key][0]
+                from_date = qual_and_quant_vector_search_df[merge_key][len(qual_and_quant_vector_search_df)-1]
                 df = yahooFinance.Ticker(ticker).history(period="max")
+                
                 if len(df) > 0:
                     df.reset_index(inplace=True)
                     df.rename({'Date': merge_key}, axis=1, inplace=True)
                     df[merge_key] = df[merge_key].dt.strftime("%Y-%m-%d")
                     df = df[::-1]
-                    df['60 Day Performance'] = df['Close'].pct_change(-60)
-                    df['30 Day Performance'] = df['Close'].pct_change(-30)
-                    df = df[df[merge_key].isin(qual_and_quant_df[merge_key])]
-                    df = df[[c for c in df.columns if c not in ['Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
-                    qual_and_quant_df = qual_and_quant_df.merge(df, left_on=merge_key, right_on=merge_key)
-                    # qual_and_quant_df.set_index("report_date", inplace=True)
+                    all_market_data_columns = list(df.columns)
+                    calculation_required = should_calculate_for_get_market_data(question, all_market_data_columns)
+                    print(f"calculation_required: {calculation_required}")
+                    if calculation_required:
+                        df = do_calculate_for_get_market_data(question, df)
+
+                    backtest_df = df.copy()
+                    backtest_qual_and_quant_vector_search_df = qual_and_quant_vector_search_df.copy()
+                    # NOTE: Add in highest high (lowest low) over 1 QTR & 2 QTR
+                    backtest_df['1 QTR'] = backtest_df['Close'].pct_change(-90)
+                    # backtest_df['2 QTR'] = backtest_df['Close'].pct_change(-180)
+                    backtest_df, backtest_qual_and_quant_vector_search_df = realign_market_df_to_closest_dt_from_upstream_df(backtest_df, backtest_qual_and_quant_vector_search_df, merge_key)
+                    backtest_df = backtest_df[[c for c in backtest_df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    backtest_qual_and_quant_vector_search_df = backtest_qual_and_quant_vector_search_df.merge(backtest_df, left_on=merge_key, right_on=merge_key)
+                    backtest_qual_and_quant_vector_search_df.drop_duplicates(inplace=True)
+                    results['MarketDataForBacktest'][ticker.upper()] = backtest_qual_and_quant_vector_search_df
+                        
+                    df, qual_and_quant_vector_search_df = realign_market_df_to_closest_dt_from_upstream_df(df, qual_and_quant_vector_search_df, merge_key)
+                    df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    qual_and_quant_vector_search_df = qual_and_quant_vector_search_df.merge(df, left_on=merge_key, right_on=merge_key)
+                    qual_and_quant_vector_search_df.drop_duplicates(inplace=True)
                     results["Context"].append(
-                        {f"{question} (ticker={ticker})" : qual_and_quant_df}
+                        {f"{question} (ticker={ticker})" : qual_and_quant_vector_search_df}
                     )
-                    results['MarketData'][ticker] = qual_and_quant_df
+                    results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_vector_search_df
+                    results['MarketData'][ticker.upper()] = qual_and_quant_vector_search_df
                     del results["QualAndQuant"][ticker]
             else:
                 solo_call = True
         elif len(results["VectorSearch"]) > 0:
             if ticker.upper() in results["VectorSearch"]:
-                import pdb; pdb.set_trace()
                 vector_search_df = results["VectorSearch"][ticker.upper()] 
                 # company_financials_df.set_index(pd.RangeIndex(len(company_financials_df)), inplace=True)
                 merge_key = None
@@ -1706,7 +2050,7 @@ def get_market_data(question, results, debug=False):
                 to_date = vector_search_df[merge_key][0]
                 from_date = vector_search_df[merge_key][len(vector_search_df)-1]
                 df = yahooFinance.Ticker(ticker).history(period="max")
-                
+                import pdb; pdb.set_trace()
                 if len(df) > 0:
                     df.reset_index(inplace=True)
                     df.rename({'Date': merge_key}, axis=1, inplace=True)
@@ -1717,10 +2061,22 @@ def get_market_data(question, results, debug=False):
                     print(f"calculation_required: {calculation_required}")
                     if calculation_required:
                         df = do_calculate_for_get_market_data(question, df)
+
+                    backtest_df = df.copy()
+                    backtest_vector_search_df = vector_search_df.copy()
+                    # NOTE: Add in highest high (lowest low) over 1 QTR & 2 QTR
+                    backtest_df['1 QTR'] = backtest_df['Close'].pct_change(-90)
+                    # backtest_df['2 QTR'] = backtest_df['Close'].pct_change(-180)
+                    backtest_df, backtest_vector_search_df = realign_market_df_to_closest_dt_from_upstream_df(backtest_df, backtest_vector_search_df, merge_key)
+                    backtest_df = backtest_df[[c for c in backtest_df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    backtest_vector_search_df = backtest_vector_search_df.merge(backtest_df, left_on=merge_key, right_on=merge_key)
+                    backtest_vector_search_df.drop_duplicates(inplace=True)
+                    results['MarketDataForBacktest'][ticker.upper()] = backtest_vector_search_df
                         
                     df, vector_search_df = realign_market_df_to_closest_dt_from_upstream_df(df, vector_search_df, merge_key)
                     df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
                     vector_search_df = vector_search_df.merge(df, left_on=merge_key, right_on=merge_key)
+                    vector_search_df.drop_duplicates(inplace=True)
                     results["Context"].append(
                         {f"{question} (ticker={ticker})" : vector_search_df}
                     )
@@ -1788,10 +2144,23 @@ def get_market_data(question, results, debug=False):
                     print(f"calculation_required: {calculation_required}")
                     if calculation_required:
                         df = do_calculate_for_get_market_data(question, df)
+
+
+                    backtest_df = df.copy()
+                    backtest_company_financials_df = company_financials_df.copy()
+                    # NOTE: Add in highest high (lowest low) over 1 QTR & 2 QTR
+                    backtest_df['1 QTR'] = backtest_df['Close'].pct_change(-90)
+                    # backtest_df['2 QTR'] = backtest_df['Close'].pct_change(-180)
+                    backtest_df, backtest_company_financials_df = realign_market_df_to_closest_dt_from_upstream_df(backtest_df, backtest_company_financials_df, merge_key)
+                    backtest_df = backtest_df[[c for c in backtest_df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
+                    backtest_company_financials_df = backtest_company_financials_df.merge(backtest_df, left_on=merge_key, right_on=merge_key)
+                    backtest_company_financials_df.drop_duplicates(inplace=True)
+                    results['MarketDataForBacktest'][ticker.upper()] = backtest_company_financials_df
                         
                     df, company_financials_df = realign_market_df_to_closest_dt_from_upstream_df(df, company_financials_df, merge_key)
                     df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
                     company_financials_df = company_financials_df.merge(df, left_on=merge_key, right_on=merge_key)
+                    company_financials_df.drop_duplicates(inplace=True)
                     results["Context"].append(
                         {f"{question} (ticker={ticker})" : company_financials_df}
                     )
@@ -2125,35 +2494,60 @@ def get_stock_financials_old(symbol, mode='calendar', limit=5, debug=False):
         raise Exception(f"Error fetching data: {response.status_code} - {response.text}")
 
 
-def fill_trade_dict(trade_dict):
-    print(f"Inside fill_trade_dict: {trade_dict}")
-    instruments = ["MSFT"]
-    start_date = datetime(2021, 1, 1)
-    end_date = datetime(2021, 12, 31)
+def get_trade_stats(backtest_df, long_short_multiplier):
+    trades_df = backtest_df.copy()
+    trades_dict = {
 
-    for _ in range(50):
-        instrument = random.choice(instruments)
-        entry_date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
-        entry_price = round(random.uniform(50, 300), 2)
+    }
 
-        exit_1m_date = entry_date + timedelta(days=30)
-        exit_1m_price = entry_price * (1 + random.uniform(-0.1, 0.1))
+    # import pdb; pdb.set_trace()
+    # trades_df['1 QTR'] = (trades_df['Close'] - trades_df['1 QTR']) / trades_df['Close']
+    trades_df['Cumul. Return'] = trades_df['1 QTR'][::-1].cumsum()
+    total_num_trades = len(trades_df)
+    num_winning_trades = (len(trades_df[trades_df['1 QTR']>0.0])*long_short_multiplier) + (len(trades_df[trades_df['1 QTR']<0.0])*long_short_multiplier)
+    winning_pct = float(num_winning_trades) / float(num_winning_trades)
+    avg_winning_trade = None
+    avg_losing_trade = None
+    largest_winning_trade = None
+    largest_losing_trade = None
+    profit_factor = None
+    expectation = None
+    # import pdb; pdb.set_trace()
+    if long_short_multiplier > 0:
+        avg_winning_trade = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].mean()
+        avg_losing_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].mean()
+        largest_winning_trade = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].max()
+        largest_losing_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].max()
+        profit_factor = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].sum() / trades_df[trades_df['1 QTR']<0.0]['1 QTR'].sum()
+        expectation = avg_winning_trade*winning_pct + avg_losing_trade*(1-winning_pct)
+    else:
+        avg_winning_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].mean()
+        avg_losing_trade = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].mean()
+        largest_winning_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].max()
+        largest_losing_trade = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].max()
+        profit_factor = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].sum() / trades_df[trades_df['1 QTR']>0.0]['1 QTR'].sum()
+        expectation = avg_winning_trade*winning_pct + avg_losing_trade*(1-winning_pct)
 
-        exit_6m_date = entry_date + timedelta(days=180)
-        exit_6m_price = entry_price * (1 + random.uniform(-0.2, 0.2))
+    stats = [
+        {"title": "Number of trades", "value": total_num_trades},
+        {"title": "expectation", "value": expectation},
+        {"title": "Profit factor", "value": profit_factor},
+        {"title": "Largest winning trade (%)", "value": largest_winning_trade},
+        {"title": "Largest losing trade (%)", "value": largest_losing_trade},
+        {"title": "win %", "value": winning_pct},
+        {"title": "avg. win (%)", "value": avg_winning_trade},
+        {"title": "avg. loss (%)", "value": avg_losing_trade}
+    ]
+    stats_df = pd.DataFrame.from_records(stats)
+    stats_df.replace(np.inf, None, inplace=True)
+    stats_df.replace(-np.inf, None, inplace=True)
+    stats_df.replace(np.nan, None, inplace=True)
+    stats = stats_df.to_dict(orient="records")
 
-        exit_1y_date = entry_date + timedelta(days=365)
-        exit_1y_price = entry_price * (1 + random.uniform(-0.3, 0.3))
 
-        trade_dict['Date'].append(entry_date.strftime('%Y-%m-%d'))
-        trade_dict['Instrument'].append(instrument)
-        trade_dict['Entry'].append(entry_price)
-        trade_dict['Exit 1M'].append(exit_1m_price)
-        trade_dict['Exit 6M'].append(exit_6m_price)
-        trade_dict['Exit 1Y'].append(exit_1y_price)
-        trade_dict['Cumul. Return'].append(random.uniform(0.05, 2.3))
+    print(f"stats: {stats}")
 
-    return trade_dict
+    return stats, trades_df
 
 
 def run_backtest(query, results, debug=False):
@@ -2161,79 +2555,39 @@ def run_backtest(query, results, debug=False):
 
     # import pdb; pdb.set_trace()
     entities = extract_entities_from_user_query(query, debug=debug)
-    ticker = None
-    from_date = None
-    to_date = None
-    timespan = None
-    multiplier = None
-
-    for entity in entities:
-        if entity["entity"] == "ticker":
-            ticker = entity["value"]
-        if entity["entity"] == "from_date":
-            from_date = entity["value"]
-        if entity["entity"] == "to_date":
-            to_date = entity["value"]
-        if entity["entity"] == "timespan":
-            timespan = entity["value"]
-        if entity["entity"] == "multiplier":
-            multiplier = entity["value"]
-    stats = [
-        {"title": "number of trades", "value": 55},
-        {"title": "total profit (%)", "value": 12.3},
-        {"title": "total profit (USD)", "value": 12345},
-        {"title": "Profit factor", "value": 1.8},
-        {"title": "Largest winning trade (%)", "value": 2.65},
-        {"title": "Largest winning trade (USD)", "value": 534.32},
-        {"title": "Largest losing trade (%)", "value": 1.3},
-        {"title": "Largest losing trade (USD)", "value": 233.54},
-        {"title": "win %", "value": 0.44},
-        {"title": "avg. win (%)", "value": 1.2},
-        {"title": "avg. loss (%)", "value": 0.34},
-        {"title": "sotrino ratio", "value": 1.6},
-        {"title": "calmar ratio", "value": 2.2},
-        {"title": "MAE", "value": 0.34},
-        {"title": "MFE", "value": 0.87},
-        {"title": "Max Drawdown (%)", "value": 3.2},
-    ]
-
-    if "backTest" not in results:
-        results["backTest"] = {}
-
-    if "finalAnalysis" not in results:
-        results["finalAnalysis"] = {
-
-        }
-
-    if "backTest" not in results["finalAnalysis"]:
-        results["finalAnalysis"]["backTest"] = {
-
-        }
-
-    if "charts" not in results["finalAnalysis"]:
-        results["finalAnalysis"]["charts"] = {
-        }
-
-    trade_dict = {"Date": [], "Instrument": [], "Entry": [], "Exit 1M": [], "Exit 6M": [], "Exit 1Y": [], "Cumul. Return": []}
-    filled_trade_dict = fill_trade_dict(trade_dict)
-    trade_df = pd.DataFrame(filled_trade_dict)
-
     # import pdb; pdb.set_trace()
+    ticker = [ent["value"] for ent in entities if ent["entity"]=="ticker"][0]
+    market_data_df = results["MarketDataForBacktest"][ticker]
+    # NOTE: implement get_long_short_multiplier
+    long_short_multiplier = 1 #get_long_short_multiplier(query)
+    backtest_df = market_data_df.copy()
+    
+
+    stats, trades_df = get_trade_stats(backtest_df, long_short_multiplier)
+    trades_df.replace(np.nan, None, inplace=True)
+    trades_df.replace(np.inf, None, inplace=True)
+    trades_df.replace(-np.inf, None, inplace=True)
+
+    # trade_dict = {"Date": [], "Instrument": [], "Entry": [], "Exit 1M": [], "Exit 6M": [], "Exit 1Y": [], "Cumul. Return": []}
+    # filled_trade_dict = fill_trade_dict(trade_dict)
+    # trade_df = pd.DataFrame(filled_trade_dict)
+
+    import pdb; pdb.set_trace()
     trades_table = {
-        "headers": list(trade_df.columns),
-        "rows": trade_df.values.tolist()
+        "headers": list(trades_df.columns),
+        "rows": trades_df.values.tolist()
     }
-    equity_curve_df = trade_df[['Date', 'Cumul. Return']]
-    equity_curve_df.set_index('Date', inplace=True)
+    equity_curve_df = trades_df[['report_date', 'Cumul. Return']]
+    equity_curve_df.set_index('report_date', inplace=True)
 
 
     equity_curve_chart = {
-        "data": trade_df.to_dict("records"),
+        "data": trades_df[::-1].to_dict("records"),
         "dataKeys": ['Cumul. Return'],
         "type": "line"
     }
-    results["backTest"] = {"title": f"Backtest Report for Query: {query}", "stats": stats, "trades": trades_table, "equity_curve": equity_curve_chart}
-    results["Context"].append({"Backtest Results": results["backTest"]})
+    # results["RunBackTest"] = {"title": f"Backtest Report for Query: {query}", "stats": stats, "trades": trades_table, "equity_curve": equity_curve_chart}
+    results["Context"].append({"Backtest Results": results["RunBackTest"]})
     results["finalAnalysis"]["backTest"] = {"stats": stats, "trades": trades_table, "equity_curve": equity_curve_chart}
 
     print(f"Inside run_backtest: {results}")
@@ -2257,29 +2611,16 @@ def get_relevant_rows(financials, question, debug=False):
     You are a helpful assistant that analyzes financial data. Given a user question and list of financial reporting terms, determine which of the
     financial terms are required to answer the question. The response should be a JSON list of the values in the supplied rows. Below are some examples:
 
-    Examples:       
-       'query': "examine the changes in lmt's debt-to-equity ratio over the last 2 years. what are the implications for its financial stability compared to competitors in the aerospace industry?", 'avalailable rows': ['wages', 'equity', 'current_liabilities', 'equity_attributable_to_parent', 'noncurrent_assets', 'liabilities_and_equity', 'current_assets', 'inventory', 'liabilities', 'other_noncurrent_assets', 'equity_attributable_to_noncontrolling_interest', 'assets', 'intangible_assets', 'accounts_payable', 'accounts_receivable', 'noncurrent_liabilities', 'other_current_liabilities', 'fixed_assets', 'other_current_assets', 'net_income_loss_attributable_to_noncontrolling_interest', 'net_income_loss_attributable_to_parent', 'income_tax_expense_benefit_deferred', 'common_stock_dividends', 'income_loss_from_continuing_operations_after_tax', 'net_income_loss', 'operating_expenses', 'diluted_average_shares', 'benefits_costs_expenses', 'diluted_earnings_per_share', 'operating_income_loss', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'income_loss_from_continuing_operations_before_tax', 'costs_and_expenses', 'basic_average_shares', 'basic_earnings_per_share', 'net_income_loss_available_to_common_stockholders_basic', 'preferred_stock_dividends_and_other_adjustments', 'cost_of_revenue', 'revenues', 'income_tax_expense_benefit', 'gross_profit', 'net_cash_flow_continuing', 'net_cash_flow', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_operating_activities_continuing', 'interest_expense_operating', 'long_term_debt', 'other_noncurrent_liabilities', 'income_loss_before_equity_method_investments', 'research_and_development', 'depreciation_and_amortization', 'income_loss_from_equity_method_investments', 'income_loss_from_discontinued_operations_net_of_tax', 'cost_of_revenue_services', 'cost_of_revenue_goods', 'income_loss_from_discontinued_operations_net_of_tax_during_phase_out', 'exchange_gains_losses'], 'correctly selected rows': ['equity', 'long_term_debt']
-       'query': "examine the changes in gd's debt-to-equity ratio over the last 2 years. what are the implications for its financial stability compared to competitors in the aerospace industry?", 'avalailable rows': ['revenues', 'income_tax_expense_benefit', 'interest_income_expense_operating_net', 'interest_income_expense_after_provision_for_losses', 'income_loss_from_continuing_operations_after_tax', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'net_income_loss_available_to_common_stockholders_basic', 'diluted_average_shares', 'basic_average_shares', 'benefits_costs_expenses', 'preferred_stock_dividends_and_other_adjustments', 'net_income_loss', 'net_income_loss_attributable_to_parent', 'income_tax_expense_benefit_deferred', 'costs_and_expenses', 'net_income_loss_attributable_to_noncontrolling_interest', 'operating_expenses', 'provision_for_loan_lease_and_other_losses', 'operating_income_loss', 'income_loss_from_continuing_operations_before_tax', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow', 'net_cash_flow_continuing', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow_from_operating_activities_discontinued', 'net_cash_flow_discontinued', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_financing_activities', 'noncurrent_assets', 'other_current_liabilities', 'other_current_assets', 'inventory', 'accounts_payable', 'other_noncurrent_assets', 'current_assets', 'liabilities_and_equity', 'liabilities', 'current_liabilities', 'fixed_assets', 'assets', 'noncurrent_liabilities', 'equity_attributable_to_noncontrolling_interest', 'wages', 'equity', 'equity_attributable_to_parent', 'long_term_debt', 'other_noncurrent_liabilities', 'income_tax_expense_benefit_current', 'interest_and_dividend_income_operating', 'depreciation_and_amortization', 'diluted_earnings_per_share', 'interest_expense_operating', 'basic_earnings_per_share', 'other_operating_expenses', 'income_loss_before_equity_method_investments', 'income_loss_from_discontinued_operations_net_of_tax', 'cost_of_revenue', 'gross_profit', 'cost_of_revenue_goods', 'cost_of_revenue_services', 'income_loss_from_discontinued_operations_net_of_tax_gain_loss_on_disposal', 'cash', 'research_and_development', 'intangible_assets', 'net_cash_flow_from_investing_activities_discontinued', 'common_stock_dividends', 'commitments_and_contingencies'], 'correctly selected rows': ['equity', 'long_term_debt']
-       'query': "examine the changes in air's debt-to-equity ratio over the last 2 years. what are the implications for its financial stability compared to competitors in the aerospace industry?", 'avalailable rows': ['benefits_costs_expenses', 'income_tax_expense_benefit', 'gross_profit', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'income_loss_from_continuing_operations_after_tax', 'net_income_loss_attributable_to_parent', 'selling_general_and_administrative_expenses', 'basic_earnings_per_share', 'income_loss_from_continuing_operations_before_tax', 'income_loss_from_equity_method_investments', 'diluted_average_shares', 'cost_of_revenue', 'net_income_loss_attributable_to_noncontrolling_interest', 'costs_and_expenses', 'revenues', 'diluted_earnings_per_share', 'preferred_stock_dividends_and_other_adjustments', 'basic_average_shares', 'income_loss_before_equity_method_investments', 'net_income_loss_available_to_common_stockholders_basic', 'net_income_loss', 'equity', 'accounts_receivable', 'other_current_liabilities', 'liabilities_and_equity', 'noncurrent_liabilities', 'equity_attributable_to_parent', 'assets', 'other_noncurrent_assets', 'inventory', 'current_assets', 'intangible_assets', 'other_current_assets', 'accounts_payable', 'liabilities', 'fixed_assets', 'equity_attributable_to_noncontrolling_interest', 'noncurrent_assets', 'current_liabilities', 'net_cash_flow_from_financing_activities', 'net_cash_flow_continuing', 'net_cash_flow', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_operating_activities_continuing', 'income_tax_expense_benefit_deferred', 'interest_expense_operating', 'net_cash_flow_from_operating_activities_discontinued', 'net_cash_flow_discontinued', 'income_tax_expense_benefit_current', 'undistributed_earnings_loss_allocated_to_participating_securities_basic', 'operating_expenses', 'income_loss_from_discontinued_operations_net_of_tax', 'operating_income_loss', 'other_operating_expenses', 'net_cash_flow_from_financing_activities_discontinued', 'net_cash_flow_from_investing_activities_discontinued', 'cost_of_revenue_services', 'cost_of_revenue_goods', 'exchange_gains_losses', 'other_noncurrent_liabilities', 'long_term_debt', 'income_loss_from_discontinued_operations_net_of_tax_during_phase_out'], 'correctly selected rows': ['equity', 'long_term_debt']
-       "query": "Compare MSFT's cloud sales growth to IBM's for 2022", "available rows": ["fixed_assets","liabilities","current_liabilities","other_noncurrent_liabilities","assets","wages","long_term_debt","noncurrent_assets","other_current_liabilities","other_noncurrent_assets","current_assets","equity_attributable_to_parent","cash","other_current_assets","liabilities_and_equity","equity","accounts_payable","equity_attributable_to_noncontrolling_interest","noncurrent_liabilities","inventory","net_cash_flow_from_financing_activities","net_cash_flow","net_cash_flow_from_financing_activities_continuing","net_cash_flow_from_operating_activities","net_cash_flow_from_investing_activities_continuing","net_cash_flow_from_operating_activities_continuing","net_cash_flow_continuing","net_cash_flow_from_investing_activities","net_income_loss_attributable_to_noncontrolling_interest","operating_expenses","benefits_costs_expenses","participating_securities_distributed_and_undistributed_earnings","net_income_loss_attributable_to_parent","income_tax_expense_benefit_deferred","income_tax_expense_benefit","operating_income_loss","net_income_loss","diluted_average_shares","costs_and_expenses","basic_earnings_per_share","income_loss_from_continuing_operations_after_tax","cost_of_revenue","net_income_loss_available_to_common_stockholders","revenues","other_operating_expenses","research_and_development","basic_average_shares","nonoperating_income_loss","income_loss_from_continuing_operations_before_tax","diluted_earnings_per_share","preferred_stock_dividends_and_other_adjustments","interest_expense_operating","income_tax_expense_benefit_current","gross_profit","exchange_gains_losses","income_loss_before_equity_method_investments","cost_of_revenue_goods","intangible_assets"], "correctly selected rows": ['revenues']
-       "query": "Compare MSFT's cloud sales growth to IBM's for 2022", "available rows": ['net_income_loss_available_to_common_stockholders_basic', 'basic_average_shares', 'net_income_loss_attributable_to_parent', 'income_loss_from_discontinued_operations_net_of_tax', 'diluted_average_shares', 'income_loss_from_continuing_operations_before_tax', 'revenues', 'diluted_earnings_per_share', 'preferred_stock_dividends_and_other_adjustments', 'net_income_loss_attributable_to_noncontrolling_interest', 'benefits_costs_expenses', 'interest_expense_operating', 'cost_of_revenue', 'gross_profit', 'operating_expenses', 'income_tax_expense_benefit', 'common_stock_dividends', 'basic_earnings_per_share', 'selling_general_and_administrative_expenses', 'income_loss_from_continuing_operations_after_tax', 'operating_income_loss', 'net_income_loss', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'costs_and_expenses', 'research_and_development', 'other_current_assets', 'noncurrent_assets', 'equity_attributable_to_noncontrolling_interest', 'assets', 'inventory', 'other_current_liabilities', 'current_assets', 'liabilities', 'liabilities_and_equity', 'equity_attributable_to_parent', 'current_liabilities', 'accounts_payable', 'noncurrent_liabilities', 'equity', 'wages', 'exchange_gains_losses', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_continuing', 'net_cash_flow', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_operating_activities_continuing'], "correctly selected rows": ['revenues']
-       "query": "investigate the trends in JP Morgan's net interest margin and loan growth over the past five years. How have changes in interest rates and economic conditions influenced their profitability?", "available rows": ['equity_attributable_to_parent','liabilities_and_equity','noncurrent_liabilities','noncurrent_assets','current_assets','assets','current_liabilities','equity','liabilities','equity_attributable_to_noncontrolling_interest','net_cash_flow_continuing','net_cash_flow_from_investing_activities','net_cash_flow_from_operating_activities_continuing','net_cash_flow_from_financing_activities','net_cash_flow','net_cash_flow_from_financing_activities_continuing','exchange_gains_losses','net_cash_flow_from_operating_activities','net_cash_flow_from_investing_activities_continuing','revenues','basic_average_shares','interest_income_expense_after_provision_for_losses','net_income_loss','diluted_earnings_per_share','diluted_average_shares','benefits_costs_expenses','preferred_stock_dividends_and_other_adjustments','noninterest_income','income_tax_expense_benefit_deferred','net_income_loss_attributable_to_noncontrolling_interest','net_income_loss_available_to_common_stockholders_basic','income_loss_from_continuing_operations_before_tax','income_loss_from_continuing_operations_after_tax','operating_expenses','noninterest_expense','interest_income_expense_operating_net','operating_income_loss','provision_for_loan_lease_and_other_losses','basic_earnings_per_share','participating_securities_distributed_and_undistributed_earnings_loss_basic','income_tax_expense_benefit','costs_and_expenses','net_income_loss_attributable_to_parent','interest_expense_operating','interest_and_dividend_income_operating','income_tax_expense_benefit_current','fixed_assets','income_loss_before_equity_method_investments','common_stock_dividends','long_term_debt'], "correctly selected rows": ["interest_and_dividend_income_operating", "interest_expense_operating", "assets"]
-       "query": "what's amzn's cogs from 2022 to 2023?", "available rows": ['current_liabilities','liabilities_and_equity','long_term_debt','other_current_assets','equity','noncurrent_assets','other_noncurrent_liabilities','assets','noncurrent_liabilities','equity_attributable_to_noncontrolling_interest','current_assets','equity_attributable_to_parent','liabilities','other_current_liabilities','accounts_payable','inventory','revenues','operating_expenses','cost_of_revenue','net_income_loss_attributable_to_parent','diluted_average_shares','diluted_earnings_per_share','benefits_costs_expenses','basic_average_shares','income_loss_from_continuing_operations_before_tax','basic_earnings_per_share','net_income_loss_attributable_to_noncontrolling_interest','costs_and_expenses','preferred_stock_dividends_and_other_adjustments','net_income_loss','income_tax_expense_benefit','participating_securities_distributed_and_undistributed_earnings_loss_basic','income_tax_expense_benefit_deferred','operating_income_loss','income_loss_from_equity_method_investments','net_income_loss_available_to_common_stockholders_basic','nonoperating_income_loss','income_loss_before_equity_method_investments','income_loss_from_continuing_operations_after_tax','gross_profit','net_cash_flow_from_operating_activities_continuing','net_cash_flow_from_investing_activities','net_cash_flow_continuing','net_cash_flow_from_financing_activities','net_cash_flow','net_cash_flow_from_financing_activities_continuing','net_cash_flow_from_investing_activities_continuing','net_cash_flow_from_operating_activities','interest_expense_operating','intangible_assets','other_noncurrent_assets','wages','exchange_gains_losses','fixed_assets','other_operating_income_expenses','income_tax_expense_benefit_current','cash','depreciation_and_amortization','other_operating_expenses','commitments_and_contingencies'], "correctly selected rows": ['cost_of_revenue']
-       "query": "what was the total amount spent on acquisitions net of cash acquired and purchases of intangible and other assets by msft in the year 2022?", "available rows": ["fixed_assets","liabilities","current_liabilities","other_noncurrent_liabilities","assets","wages","long_term_debt","noncurrent_assets","other_current_liabilities","other_noncurrent_assets","current_assets","equity_attributable_to_parent","cash","other_current_assets","liabilities_and_equity","equity","accounts_payable","equity_attributable_to_noncontrolling_interest","noncurrent_liabilities","inventory","net_cash_flow_from_financing_activities","net_cash_flow","net_cash_flow_from_financing_activities_continuing","net_cash_flow_from_operating_activities","net_cash_flow_from_investing_activities_continuing","net_cash_flow_from_operating_activities_continuing","net_cash_flow_continuing","net_cash_flow_from_investing_activities","net_income_loss_attributable_to_noncontrolling_interest","operating_expenses","benefits_costs_expenses","participating_securities_distributed_and_undistributed_earnings","net_income_loss_attributable_to_parent","income_tax_expense_benefit_deferred","income_tax_expense_benefit","operating_income_loss","net_income_loss","diluted_average_shares","costs_and_expenses","basic_earnings_per_share","income_loss_from_continuing_operations_after_tax","cost_of_revenue","net_income_loss_available_to_common_stockholders","revenues","other_operating_expenses","research_and_development","basic_average_shares","nonoperating_income_loss","income_loss_from_continuing_operations_before_tax","diluted_earnings_per_share","preferred_stock_dividends_and_other_adjustments","interest_expense_operating","income_tax_expense_benefit_current","gross_profit","exchange_gains_losses","income_loss_before_equity_method_investments","cost_of_revenue_goods","intangible_assets"], "correctly selected rows": ['cash', 'correctly selected rows', 'net_cash_flow_from_investing_activities']
-       "query": "What was the trend in MSFT's Payments for Repurchase of Common Stock from Q3 2020 to Q1 2023?", "available rows": ["fixed_assets","liabilities","current_liabilities","other_noncurrent_liabilities","assets","wages","long_term_debt","noncurrent_assets","other_current_liabilities","other_noncurrent_assets","current_assets","equity_attributable_to_parent","cash","other_current_assets","liabilities_and_equity","equity","accounts_payable","equity_attributable_to_noncontrolling_interest","noncurrent_liabilities","inventory","net_cash_flow_from_financing_activities","net_cash_flow","net_cash_flow_from_financing_activities_continuing","net_cash_flow_from_operating_activities","net_cash_flow_from_investing_activities_continuing","net_cash_flow_from_operating_activities_continuing","net_cash_flow_continuing","net_cash_flow_from_investing_activities","net_income_loss_attributable_to_noncontrolling_interest","operating_expenses","benefits_costs_expenses","participating_securities_distributed_and_undistributed_earnings","net_income_loss_attributable_to_parent","income_tax_expense_benefit_deferred","income_tax_expense_benefit","operating_income_loss","net_income_loss","diluted_average_shares","costs_and_expenses","basic_earnings_per_share","income_loss_from_continuing_operations_after_tax","cost_of_revenue","net_income_loss_available_to_common_stockholders","revenues","other_operating_expenses","research_and_development","basic_average_shares","nonoperating_income_loss","income_loss_from_continuing_operations_before_tax","diluted_earnings_per_share","preferred_stock_dividends_and_other_adjustments","interest_expense_operating","income_tax_expense_benefit_current","gross_profit","exchange_gains_losses","income_loss_before_equity_method_investments","cost_of_revenue_goods","intangible_assets"], "correctly selected rows": ["net_cash_flow_from_financing_activities"]
-       "query": "Compare Amazon's logistics and fulfillment expenses as a percentage of net sales over the past 2 years. How have changes in these expenses impacted Amazon's operating margin, and what strategies have been implemented to optimize their supply chain efficiency?", "available rows": ['net_income_loss_attributable_to_noncontrolling_interest', 'income_loss_from_continuing_operations_before_tax', 'net_income_loss', 'income_loss_before_equity_method_investments', 'operating_expenses', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'nonoperating_income_loss', 'net_income_loss_attributable_to_parent', 'basic_earnings_per_share', 'gross_profit', 'income_loss_from_equity_method_investments', 'diluted_earnings_per_share', 'revenues', 'operating_income_loss', 'income_tax_expense_benefit', 'preferred_stock_dividends_and_other_adjustments', 'net_income_loss_available_to_common_stockholders_basic', 'benefits_costs_expenses', 'basic_average_shares', 'costs_and_expenses', 'diluted_average_shares', 'income_tax_expense_benefit_deferred', 'income_loss_from_continuing_operations_after_tax', 'cost_of_revenue', 'assets', 'accounts_payable', 'other_current_liabilities', 'other_current_assets', 'long_term_debt', 'liabilities_and_equity', 'noncurrent_liabilities', 'noncurrent_assets', 'equity_attributable_to_parent', 'liabilities', 'equity_attributable_to_noncontrolling_interest', 'inventory', 'equity', 'other_noncurrent_liabilities', 'current_liabilities', 'current_assets', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow', 'net_cash_flow_continuing', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_financing_activities'], "correctly selected rows": ['revenues', 'operating_expenses', 'operating_income_loss', 'costs_and_expenses', 'gross_profit', 'cost_of_revenue']
-       "query": "Examine the trends in American Express's credit card delinquency rates and provisions for credit losses over the past five years. How have macroeconomic factors influenced these trends, and what risk mitigation strategies has the company adopted?", "available rows": ['diluted_average_shares', 'benefits_costs_expenses', 'net_income_loss_attributable_to_noncontrolling_interest', 'net_income_loss_attributable_to_parent', 'preferred_stock_dividends_and_other_adjustments', 'provision_for_loan_lease_and_other_losses', 'income_loss_from_continuing_operations_before_tax', 'net_income_loss_available_to_common_stockholders_basic', 'interest_and_dividend_income_operating', 'operating_expenses', 'revenues', 'basic_average_shares', 'interest_income_expense_operating_net', 'basic_earnings_per_share', 'noninterest_expense', 'diluted_earnings_per_share', 'income_tax_expense_benefit', 'costs_and_expenses', 'operating_income_loss', 'income_loss_from_continuing_operations_after_tax', 'noninterest_income', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'net_income_loss', 'interest_income_expense_after_provision_for_losses', 'equity_attributable_to_parent', 'liabilities', 'assets', 'long_term_debt', 'equity', 'noncurrent_liabilities', 'fixed_assets', 'equity_attributable_to_noncontrolling_interest', 'current_assets', 'current_liabilities', 'noncurrent_assets', 'liabilities_and_equity', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_operating_activities', 'exchange_gains_losses', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow', 'net_cash_flow_from_investing_activities', 'net_cash_flow_continuing'], "correctly selected rows": ['provision_for_loan_lease_and_other_losses', 'net_income_loss', 'noninterest_expense', 'interest_income_expense_after_provision_for_losses', 'current_assets', 'liabilities', 'long_term_debt']
-       "query": "Compare MSFT's cloud sales growth to IBM's", "available rows": ['diluted_average_shares', 'benefits_costs_expenses', 'net_income_loss_attributable_to_noncontrolling_interest', 'net_income_loss_attributable_to_parent', 'preferred_stock_dividends_and_other_adjustments', 'provision_for_loan_lease_and_other_losses', 'income_loss_from_continuing_operations_before_tax', 'net_income_loss_available_to_common_stockholders_basic', 'interest_and_dividend_income_operating', 'operating_expenses', 'revenues', 'basic_average_shares', 'interest_income_expense_operating_net', 'basic_earnings_per_share', 'noninterest_expense', 'diluted_earnings_per_share', 'income_tax_expense_benefit', 'costs_and_expenses', 'operating_income_loss', 'income_loss_from_continuing_operations_after_tax', 'noninterest_income', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'net_income_loss', 'interest_income_expense_after_provision_for_losses', 'equity_attributable_to_parent', 'liabilities', 'assets', 'long_term_debt', 'equity', 'noncurrent_liabilities', 'fixed_assets', 'equity_attributable_to_noncontrolling_interest', 'current_assets', 'current_liabilities', 'noncurrent_assets', 'liabilities_and_equity', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_operating_activities', 'exchange_gains_losses', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow', 'net_cash_flow_from_investing_activities', 'net_cash_flow_continuing'], "correctly selected rows": ['provision_for_loan_lease_and_other_losses', 'net_income_loss', 'noninterest_expense', 'interest_income_expense_after_provision_for_losses', 'current_assets', 'liabilities', 'long_term_debt'], "correctly selected rows": ['revenues']
-       "query": "Compare MSFT's cloud sales growth to IBM's for 2022", "available rows": ['net_income_loss_available_to_common_stockholders_basic', 'basic_average_shares', 'net_income_loss_attributable_to_parent', 'income_loss_from_discontinued_operations_net_of_tax', 'diluted_average_shares', 'income_loss_from_continuing_operations_before_tax', 'revenues', 'diluted_earnings_per_share', 'preferred_stock_dividends_and_other_adjustments', 'net_income_loss_attributable_to_noncontrolling_interest', 'benefits_costs_expenses', 'interest_expense_operating', 'cost_of_revenue', 'gross_profit', 'operating_expenses', 'income_tax_expense_benefit', 'common_stock_dividends', 'basic_earnings_per_share', 'selling_general_and_administrative_expenses', 'income_loss_from_continuing_operations_after_tax', 'operating_income_loss', 'net_income_loss', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'costs_and_expenses', 'research_and_development', 'other_current_assets', 'noncurrent_assets', 'equity_attributable_to_noncontrolling_interest', 'assets', 'inventory', 'other_current_liabilities', 'current_assets', 'liabilities', 'liabilities_and_equity', 'equity_attributable_to_parent', 'current_liabilities', 'accounts_payable', 'noncurrent_liabilities', 'equity', 'wages', 'exchange_gains_losses', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_continuing', 'net_cash_flow', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_operating_activities_continuing'], "correctly selected rows": ['revenues']
-       "query": "Compare the research and development investments as a percentage of revenue for Amgen and Merck over the past three years. How does this correlate with their pipeline of new drugs and potential revenue growth?", "available rows": ['costs_and_expenses', 'basic_earnings_per_share', 'income_loss_from_continuing_operations_after_tax', 'income_loss_from_discontinued_operations_net_of_tax', 'gross_profit', 'diluted_average_shares', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'other_operating_expenses', 'selling_general_and_administrative_expenses', 'benefits_costs_expenses', 'net_income_loss_attributable_to_parent', 'income_loss_from_continuing_operations_before_tax', 'operating_income_loss', 'interest_expense_operating', 'net_income_loss', 'basic_average_shares', 'income_tax_expense_benefit_current', 'common_stock_dividends', 'revenues', 'income_loss_from_discontinued_operations_net_of_tax_gain_loss_on_disposal', 'net_income_loss_available_to_common_stockholders_basic', 'net_income_loss_attributable_to_noncontrolling_interest', 'preferred_stock_dividends_and_other_adjustments', 'income_tax_expense_benefit', 'research_and_development', 'diluted_earnings_per_share', 'income_tax_expense_benefit_deferred', 'operating_expenses', 'cost_of_revenue', 'assets', 'noncurrent_liabilities', 'other_current_assets', 'inventory', 'equity', 'other_current_liabilities', 'long_term_debt', 'liabilities', 'current_assets', 'equity_attributable_to_parent', 'fixed_assets', 'equity_attributable_to_noncontrolling_interest', 'intangible_assets', 'current_liabilities', 'other_noncurrent_assets', 'accounts_payable', 'wages', 'liabilities_and_equity', 'other_noncurrent_liabilities', 'noncurrent_assets', 'net_cash_flow', 'net_cash_flow_from_operating_activities', 'net_cash_flow_continuing', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_financing_activities_continuing', 'exchange_gains_losses'], "correctly selected rows": ['revenues', 'research_and_development']
-       "query": "Compare the research and development investments as a percentage of revenue for Amgen and Merck over the past three years. How does this correlate with their pipeline of new drugs and potential revenue growth?", "available rows": ['selling_general_and_administrative_expenses', 'basic_earnings_per_share', 'cost_of_revenue', 'other_operating_expenses', 'gross_profit', 'revenues', 'diluted_earnings_per_share', 'income_loss_from_continuing_operations_before_tax', 'costs_and_expenses', 'income_tax_expense_benefit_deferred', 'research_and_development', 'preferred_stock_dividends_and_other_adjustments', 'net_income_loss_available_to_common_stockholders_basic', 'diluted_average_shares', 'benefits_costs_expenses', 'net_income_loss', 'income_tax_expense_benefit', 'operating_income_loss', 'operating_expenses', 'income_loss_from_continuing_operations_after_tax', 'net_income_loss_attributable_to_parent', 'net_income_loss_attributable_to_noncontrolling_interest', 'basic_average_shares', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'fixed_assets', 'equity_attributable_to_parent', 'intangible_assets', 'other_current_assets', 'noncurrent_liabilities', 'equity_attributable_to_noncontrolling_interest', 'assets', 'liabilities', 'current_liabilities', 'other_current_liabilities', 'inventory', 'accounts_payable', 'current_assets', 'other_noncurrent_assets', 'equity', 'noncurrent_assets', 'liabilities_and_equity', 'net_cash_flow_continuing', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_financing_activities', 'net_cash_flow', 'exchange_gains_losses', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_investing_activities_continuing'], "correctly selected rows": ['revenues', 'research_and_development']
-       "query": "How has apple’s gross margins trended compared to Intel and Microsoft’s over the past 3 years?", "available rows": ["fixed_assets","liabilities","current_liabilities","other_noncurrent_liabilities","assets","wages","long_term_debt","noncurrent_assets","other_current_liabilities","other_noncurrent_assets","current_assets","equity_attributable_to_parent","cash","other_current_assets","liabilities_and_equity","equity","accounts_payable","equity_attributable_to_noncontrolling_interest","noncurrent_liabilities","inventory","net_cash_flow_from_financing_activities","net_cash_flow","net_cash_flow_from_financing_activities_continuing","net_cash_flow_from_operating_activities","net_cash_flow_from_investing_activities_continuing","net_cash_flow_from_operating_activities_continuing","net_cash_flow_continuing","net_cash_flow_from_investing_activities","net_income_loss_attributable_to_noncontrolling_interest","operating_expenses","benefits_costs_expenses","participating_securities_distributed_and_undistributed_earnings","net_income_loss_attributable_to_parent","income_tax_expense_benefit_deferred","income_tax_expense_benefit","operating_income_loss","net_income_loss","diluted_average_shares","costs_and_expenses","basic_earnings_per_share","income_loss_from_continuing_operations_after_tax","cost_of_revenue","net_income_loss_available_to_common_stockholders","revenues","other_operating_expenses","research_and_development","basic_average_shares","nonoperating_income_loss","income_loss_from_continuing_operations_before_tax","diluted_earnings_per_share","preferred_stock_dividends_and_other_adjustments","interest_expense_operating","income_tax_expense_benefit_current","gross_profit","exchange_gains_losses","income_loss_before_equity_method_investments","cost_of_revenue_goods","intangible_assets"], "correctly selected rows": ['gross_profit', 'revenues']
-       "query": "Examine the changes in Boeing's debt-to-equity ratio over the last five years. What are the implications for its financial stability compared to competitors in the aerospace industry?", 'avalailable rows': ['net_cash_flow', 'net_cash_flow_continuing', 'exchange_gains_losses', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_operating_activities', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_from_financing_activities', 'net_cash_flow_from_financing_activities_continuing', 'long_term_debt', 'other_noncurrent_liabilities', 'liabilities_and_equity', 'other_noncurrent_assets', 'accounts_payable', 'fixed_assets', 'other_current_liabilities', 'intangible_assets', 'current_liabilities', 'current_assets', 'equity_attributable_to_parent', 'equity', 'noncurrent_assets', 'liabilities', 'assets', 'noncurrent_liabilities', 'equity_attributable_to_noncontrolling_interest', 'research_and_development', 'interest_and_debt_expense', 'costs_and_expenses', 'operating_expenses', 'operating_income_loss', 'income_loss_from_continuing_operations_after_tax', 'basic_average_shares', 'net_income_loss_available_to_common_stockholders_basic', 'gross_profit', 'preferred_stock_dividends_and_other_adjustments', 'income_loss_from_continuing_operations_before_tax', 'benefits_costs_expenses', 'diluted_average_shares', 'basic_earnings_per_share', 'cost_of_revenue', 'other_operating_expenses', 'net_income_loss', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'provision_for_loan_lease_and_other_losses', 'revenues', 'income_tax_expense_benefit', 'net_income_loss_attributable_to_parent', 'diluted_earnings_per_share', 'net_income_loss_attributable_to_noncontrolling_interest', 'wages', 'income_loss_before_equity_method_investments', 'income_tax_expense_benefit_current', 'income_loss_from_equity_method_investments', 'income_tax_expense_benefit_deferred', 'cash', 'other_current_assets', 'undistributed_earnings_loss_allocated_to_participating_securities_basic', 'common_stock_dividends', 'cost_of_revenue_goods', 'cost_of_revenue_services', 'income_loss_from_discontinued_operations_net_of_tax', 'income_loss_from_discontinued_operations_net_of_tax_gain_loss_on_disposal', 'depreciation_and_amortization'], 'correctly selected rows': ['long_term_debt', 'equity'] 
-       "query": "examine the changes in spr's debt-to-equity ratio over the last 2 years. what are the implications for its financial stability compared to competitors in the aerospace industry?", 'avalailable rows': ['income_tax_expense_benefit_deferred', 'selling_general_and_administrative_expenses', 'diluted_average_shares', 'net_income_loss_available_to_common_stockholders_basic', 'income_loss_from_equity_method_investments', 'preferred_stock_dividends_and_other_adjustments', 'participating_securities_distributed_and_undistributed_earnings_loss_basic', 'net_income_loss_attributable_to_noncontrolling_interest', 'basic_earnings_per_share', 'other_operating_expenses', 'interest_and_debt_expense', 'net_income_loss_attributable_to_parent', 'basic_average_shares', 'income_loss_from_continuing_operations_after_tax', 'benefits_costs_expenses', 'net_income_loss', 'gross_profit', 'cost_of_revenue', 'income_loss_from_continuing_operations_before_tax', 'diluted_earnings_per_share', 'operating_expenses', 'revenues', 'income_loss_before_equity_method_investments', 'research_and_development', 'operating_income_loss', 'costs_and_expenses', 'income_tax_expense_benefit', 'net_cash_flow_from_investing_activities_continuing', 'net_cash_flow_continuing', 'net_cash_flow_from_operating_activities_continuing', 'net_cash_flow_from_financing_activities_continuing', 'net_cash_flow', 'net_cash_flow_from_financing_activities', 'exchange_gains_losses', 'net_cash_flow_from_investing_activities', 'net_cash_flow_from_operating_activities', 'equity_attributable_to_parent', 'noncurrent_liabilities', 'other_noncurrent_liabilities', 'other_noncurrent_assets', 'intangible_assets', 'inventory', 'equity', 'liabilities', 'noncurrent_assets', 'accounts_payable', 'equity_attributable_to_noncontrolling_interest', 'current_liabilities', 'other_current_liabilities', 'assets', 'prepaid_expenses', 'fixed_assets', 'liabilities_and_equity', 'current_assets', 'other_current_assets', 'long_term_debt', 'undistributed_earnings_loss_allocated_to_participating_securities_basic', 'income_tax_expense_benefit_current'], 'correctly selected rows': ['equity', 'liabilities', 'long_term_debt']
-       "query": "Calculate the correlation between the % change of aapl’s gross margins and its inventory ratio for 2022.", "available rows": ["fixed_assets","liabilities","current_liabilities","other_noncurrent_liabilities","assets","wages","long_term_debt","noncurrent_assets","other_current_liabilities","other_noncurrent_assets","current_assets","equity_attributable_to_parent","cash","other_current_assets","liabilities_and_equity","equity","accounts_payable","equity_attributable_to_noncontrolling_interest","noncurrent_liabilities","inventory","net_cash_flow_from_financing_activities","net_cash_flow","net_cash_flow_from_financing_activities_continuing","net_cash_flow_from_operating_activities","net_cash_flow_from_investing_activities_continuing","net_cash_flow_from_operating_activities_continuing","net_cash_flow_continuing","net_cash_flow_from_investing_activities","net_income_loss_attributable_to_noncontrolling_interest","operating_expenses","benefits_costs_expenses","participating_securities_distributed_and_undistributed_earnings","net_income_loss_attributable_to_parent","income_tax_expense_benefit_deferred","income_tax_expense_benefit","operating_income_loss","net_income_loss","diluted_average_shares","costs_and_expenses","basic_earnings_per_share","income_loss_from_continuing_operations_after_tax","cost_of_revenue","net_income_loss_available_to_common_stockholders","revenues","other_operating_expenses","research_and_development","basic_average_shares","nonoperating_income_loss","income_loss_from_continuing_operations_before_tax","diluted_earnings_per_share","preferred_stock_dividends_and_other_adjustments","interest_expense_operating","income_tax_expense_benefit_current","gross_profit","exchange_gains_losses","income_loss_before_equity_method_investments","cost_of_revenue_goods","intangible_assets"], "correctly selected rows": ['gross_profit', 'revenues'], "correctly selected rows": ['gross_profit', 'revenues', 'cost_of_revenue', 'inventory']
-       "query": "calculate the correlation between the % change of aapl’s gross margins and its inventory ratio over the past 2 years. how does it compare to msft?", "available rows": ["fixed_assets","liabilities","current_liabilities","other_noncurrent_liabilities","assets","wages","long_term_debt","noncurrent_assets","other_current_liabilities","other_noncurrent_assets","current_assets","equity_attributable_to_parent","cash","other_current_assets","liabilities_and_equity","equity","accounts_payable","equity_attributable_to_noncontrolling_interest","noncurrent_liabilities","inventory","net_cash_flow_from_financing_activities","net_cash_flow","net_cash_flow_from_financing_activities_continuing","net_cash_flow_from_operating_activities","net_cash_flow_from_investing_activities_continuing","net_cash_flow_from_operating_activities_continuing","net_cash_flow_continuing","net_cash_flow_from_investing_activities","net_income_loss_attributable_to_noncontrolling_interest","operating_expenses","benefits_costs_expenses","participating_securities_distributed_and_undistributed_earnings","net_income_loss_attributable_to_parent","income_tax_expense_benefit_deferred","income_tax_expense_benefit","operating_income_loss","net_income_loss","diluted_average_shares","costs_and_expenses","basic_earnings_per_share","income_loss_from_continuing_operations_after_tax","cost_of_revenue","net_income_loss_available_to_common_stockholders","revenues","other_operating_expenses","research_and_development","basic_average_shares","nonoperating_income_loss","income_loss_from_continuing_operations_before_tax","diluted_earnings_per_share","preferred_stock_dividends_and_other_adjustments","interest_expense_operating","income_tax_expense_benefit_current","gross_profit","exchange_gains_losses","income_loss_before_equity_method_investments","cost_of_revenue_goods","intangible_assets"], "correctly selected rows": ['gross_profit', 'cost_of_revenue', 'inventory', 'revenues']
+    Examples:
        "query": "Compare F's revenue growth and stock performance since 2020? Which has appreciated more and by how much?", "available rows": ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['revenue']
-       "query": "Compare TSLA's revenue growth and stock performance since 2020? Which has appreciated more and by how much?", "available rows": ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['revenue']
+       "query": "Compare TSLA's revenue growth and stock performance since 2020? Which has appreciated more and by how much?", "available rows": ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['revenue']   
+       "query": "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", 'avalailable rows': ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['revenue']
+       "query": "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", 'avalailable rows': ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['revenue']
+       "query": "What is the FY2019 fixed asset turnover ratio for Activision Blizzard? Fixed asset turnover ratio is defined as: FY2019 revenue / (average PP&E between FY2018 and FY2019). Round your answer to two decimal places. Base your judgments on the information provided primarily in the statement of income and the statement of financial position.", "available rows": ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['revenue', 'totalNonCurrentAssets']
+       "query": "Does 3M maintain a stable trend of dividend distribution?", "available rows": ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['dividendsPaid']
+       "query": "You are an investment banker and your only resource(s) to answer the following question is (are): the statement of financial position and the cash flow statement. Here's the question: what is the FY2015 operating cash flow ratio for Adobe? Operating cash flow ratio is defined as: cash from operations / total current liabilities. Round your answer to two decimal places.", ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['netCashProvidedByOperatingActivities', 'totalCurrentLiabilities']
+       "query": "What are the debt levels of AAPL?", 'avalailable rows': ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['longTermDebt', 'shortTermDebt', 'totalDebt', 'netDebt']
+       "query": "What are the debt levels of MSFT?", 'avalailable rows': ['revenue', 'costOfRevenue', 'grossProfit', 'grossProfitRatio', 'researchAndDevelopmentExpenses', 'generalAndAdministrativeExpenses', 'sellingAndMarketingExpenses', 'sellingGeneralAndAdministrativeExpenses', 'otherExpenses', 'operatingExpenses', 'costAndExpenses', 'interestIncome', 'interestExpense', 'depreciationAndAmortization', 'ebitda', 'ebitdaratio', 'operatingIncome', 'operatingIncomeRatio', 'totalOtherIncomeExpensesNet', 'incomeBeforeTax', 'incomeBeforeTaxRatio', 'incomeTaxExpense', 'netIncome', 'netIncomeRatio', 'eps', 'epsdiluted', 'weightedAverageShsOut', 'weightedAverageShsOutDil', 'link', 'finalLink', 'cashAndCashEquivalents', 'shortTermInvestments', 'cashAndShortTermInvestments', 'netReceivables', 'inventory', 'otherCurrentAssets', 'totalCurrentAssets', 'propertyPlantEquipmentNet', 'goodwill', 'intangibleAssets', 'goodwillAndIntangibleAssets', 'longTermInvestments', 'taxAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 'otherAssets', 'totalAssets', 'accountPayables', 'shortTermDebt', 'taxPayables', 'deferredRevenue', 'otherCurrentLiabilities', 'totalCurrentLiabilities', 'longTermDebt', 'deferredRevenueNonCurrent', 'deferredTaxLiabilitiesNonCurrent', 'otherNonCurrentLiabilities', 'totalNonCurrentLiabilities', 'otherLiabilities', 'capitalLeaseObligations', 'totalLiabilities', 'preferredStock', 'commonStock', 'retainedEarnings', 'accumulatedOtherComprehensiveIncomeLoss', 'othertotalStockholdersEquity', 'totalStockholdersEquity', 'totalEquity', 'totalLiabilitiesAndStockholdersEquity', 'minorityInterest', 'totalLiabilitiesAndTotalEquity', 'totalInvestments', 'totalDebt', 'netDebt', 'deferredIncomeTax', 'stockBasedCompensation', 'changeInWorkingCapital', 'accountsReceivables', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities', 'investmentsInPropertyPlantAndEquipment', 'acquisitionsNet', 'purchasesOfInvestments', 'salesMaturitiesOfInvestments', 'otherInvestingActivites', 'netCashUsedForInvestingActivites', 'debtRepayment', 'commonStockIssued', 'commonStockRepurchased', 'dividendsPaid', 'otherFinancingActivites', 'netCashUsedProvidedByFinancingActivities', 'effectOfForexChangesOnCash', 'netChangeInCash', 'cashAtEndOfPeriod', 'cashAtBeginningOfPeriod', 'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow', 'Fiscal Date'], "correctly selected rows": ['longTermDebt', 'shortTermDebt', 'totalDebt', 'netDebt']
     """
 
     prompt = """
@@ -2305,16 +2646,7 @@ def get_relevant_rows(financials, question, debug=False):
         print(f"'query': {question}")
         print(f"'avalailable rows': {financials}")
         print(f"'correctly selected rows': {relevant_rows}")
-        import pdb; pdb.set_trace()
-
-        # with open("/home/ubuntu/tmcc-backend/get_relevant_rows_example_to_add.json", "w") as f:
-        #         f.write(
-        #             f"""
-        #                 "query": "{question}",
-        #                 "rows": {financials},
-        #                 "response": {relevant_rows}
-        #             """
-        #         )
+        # import pdb; pdb.set_trace()
 
         return relevant_rows
     except Exception as e:
@@ -2349,7 +2681,10 @@ def get_relevant_fiscal_columns(financials, question, debug=False):
         query: "How has amzn's cogs grown annually quarter over quarter over 2023 vs 2022?", answer: ['Q4 2023', 'Q3 2023', 'Q2 2023', 'Q1 2023', 'Q4 2022', 'Q3 2022', 'Q2 2022', 'Q1 2022', 'Q4 2021', 'Q3 2021', 'Q2 2021', 'Q1 2021']
         query: "How has amzn's cogs grown annually quarter over quarter over 2023?", answer: ['Q4 2023', 'Q3 2023', 'Q2 2023', 'Q1 2023']
         query: "Show me the percentage change of aapl's gross margins versus Intel and Microsoft over the past 3 years?", answer: ['Q2 2024', 'Q1 2024','Q3 2023', 'Q2 2023', 'Q1 2023', 'Q4 2022', 'Q3 2022', 'Q2 2022', 'Q1 2022', 'Q4 2021', 'Q3 2021', 'Q2 2021', 'Q1 2021']
-        query: "calculate the correlation between the % change of aapl’s gross margins and its inventory ratio over the past 2 years. how does it compare to msft?", answer: ['Q2 2024', 'Q1 2024', 'Q4 2023', 'Q3 2023', 'Q2 2023', 'Q1 2023', 'Q4 2022', 'Q3 2022', 'Q2 2022', 'Q1 2022', 'Q4 2021', 'Q3 2021', 'Q2 2021', 'Q1 2021']
+        query: "calculate the correlation between the % change of aapl’s gross margins and its inventory ratio over the past 2 years. how does it compare to msft?", answer: ['Q2 2024', 'Q1 2024', 'Q4 2023', 'Q3 2023', 'Q2 2023', 'Q1 2023', 'Q4 2022', 'Q3 2022', 'Q2 2022', 'Q1 2022', 'Q4 2021', 'Q3 2021', 'Q2 2021', 'Q1 2021'] 
+        query: "What is the FY2019 fixed asset turnover ratio for Activision Blizzard? Fixed asset turnover ratio is defined as: FY2019 revenue / (average PP&E between FY2018 and FY2019). Round your answer to two decimal places. Base your judgments on the information provided primarily in the statement of income and the statement of financial position.", answer: ['Q4 2019', 'Q3 2019', 'Q2 2019', 'Q1 2019', 'Q4 2018', 'Q3 2018', 'Q2 2018', 'Q1 2018']
+        query: "What is Adobe's year-over-year change in unadjusted operating income from FY2015 to FY2016 (in units of percents and round to one decimal place)? Give a solution to the question by using the income statement.", answer: ['Q4 2016', 'Q3 2016', 'Q2 2016', 'Q1 2016', 'Q4 2015', 'Q3 2015', 'Q2 2015', 'Q1 2015']
+    
     """
 
     prompt = """
@@ -2414,6 +2749,7 @@ def get_relevant_calendar_columns(financials, question, debug=False):
     dates are required to answer the question. The response should be a JSON list of the values  as shown in the examples below:
 
     Examples:     
+        query: "How has AAPL's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if I bought the stock each time?", available columns: ['2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30', '2017-09-30', '2017-07-01', '2017-04-01', '2016-12-31', '2016-09-24', '2016-06-25', '2016-03-26', '2015-12-26', '2015-09-26', '2015-06-27', '2015-03-28', '2014-12-27', '2014-09-27', '2014-06-28', '2014-03-29', '2013-12-28', '2013-09-28', '2013-06-29', '2013-03-30', '2012-12-29', '2012-09-29', '2012-06-30', '2012-03-31', '2011-12-31', '2011-09-24', '2011-06-25', '2011-03-26', '2010-12-25', '2010-09-25', '2010-06-26', '2010-03-27', '2009-12-26', '2009-09-26', '2009-06-27', '2009-03-28', '2008-12-27', '2008-09-27', '2008-06-28', '2008-03-29', '2007-12-29', '2007-09-29', '2007-06-30', '2007-03-31', '2006-12-30', '2006-09-30', '2006-07-01', '2006-04-01'], answer: ['2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30']
         query: "compare the cogs between 2021 and 2023 between AMZN and its comps", available columns: ['2024-06-30','2024-03-31','2023-12-31','2023-09-30','2023-06-30','2023-03-31','2022-12-31','2022-09-30','2022-06-30','2022-03-31','2021-12-31','2021-09-30','2021-06-30','2021-03-31','2020-12-31','2020-09-30','2020-06-30','2020-03-31','2019-12-31','2019-09-30','2019-06-30','2019-03-31','2018-12-31','2018-09-30','2018-06-30','2018-03-31','2017-09-30','2017-06-30','2017-03-31','2016-12-31','2016-09-30','2016-06-30','2016-03-31','2015-12-31','2015-09-30','2015-06-30','2015-03-31','2014-12-31','2014-09-30','2014-06-30','2014-03-31','2013-12-31','2013-09-30','2013-06-30','2013-03-31','2012-12-31','2012-09-30','2012-06-30','2012-03-31','2011-12-31','2011-09-30','2011-06-30','2011-03-31','2010-12-31','2010-09-30','2010-06-30','2010-03-31','2009-12-31','2009-09-30','2009-06-30','2009-03-30'], answer: ['2023-12-31', '2023-09-30', '2023-06-30', '2023-03-31', '2022-12-31', '2022-09-30', '2022-06-30', '2022-03-31'] 
         query: "investigate the trends in JP Morgan's net interest margin and loan growth over the past 2 years. How have changes in interest rates and economic conditions influenced their profitability?", available columns: ['2024-06-30','2024-03-31','2023-12-31','2023-09-30','2023-06-30','2023-03-31','2022-12-31','2022-09-30','2022-06-30','2022-03-31','2021-12-31','2021-09-30','2021-06-30','2021-03-31','2020-12-31','2020-09-30','2020-06-30','2020-03-31','2019-12-31','2019-09-30','2019-06-30','2019-03-31','2018-12-31','2018-09-30','2018-06-30','2018-03-31','2017-12-31','2017-09-30','2017-06-30','2017-03-31','2016-12-31','2016-09-30','2016-06-30','2016-03-31','2015-12-31','2015-09-30','2015-06-30','2015-03-31','2014-12-31','2014-09-30','2014-06-30','2014-03-31','2013-12-31','2013-09-30','2013-06-30','2013-03-31','2012-12-31','2012-09-30','2012-06-30','2012-03-31','2011-12-31','2011-09-30','2011-06-30','2011-03-31','2010-09-30','2010-06-30','2010-03-31','2009-12-31','2009-09-30','2009-06-30','2009-03-30'] , answer: ['2024-06-30','2024-03-31','2023-12-31','2023-09-30','2023-06-30','2023-03-31','2022-12-31','2022-09-30','2022-06-30','2022-03-31','2021-12-31','2021-09-30','2021-06-30']
         query: "what's amzn's cogs from 2022 to 2023?", available columns: ['2024-06-30','2024-03-31','2023-12-31','2023-09-30','2023-06-30','2023-03-31','2022-12-31','2022-09-30','2022-06-30','2022-03-31','2021-12-31','2021-09-30','2021-06-30','2021-03-31','2020-12-31','2020-09-30','2020-06-30','2020-03-31','2019-12-31','2019-09-30','2019-06-30','2019-03-31','2018-12-31','2018-09-30','2018-06-30','2018-03-31','2017-09-30','2017-06-30','2017-03-31','2016-12-31','2016-09-30','2016-06-30','2016-03-31','2015-12-31','2015-09-30','2015-06-30','2015-03-31','2014-12-31','2014-09-30','2014-06-30','2014-03-31','2013-12-31','2013-09-30','2013-06-30','2013-03-31','2012-12-31','2012-09-30','2012-06-30','2012-03-31','2011-12-31','2011-09-30','2011-06-30','2011-03-31','2010-12-31','2010-09-30','2010-06-30','2010-03-31','2009-12-31','2009-09-30','2009-06-30','2009-03-30'], answer: ['2023-12-31', '2023-09-30', '2023-06-30', '2023-03-31', '2022-12-31', '2022-09-30', '2022-06-30', '2022-03-31'] 
@@ -2424,6 +2760,9 @@ def get_relevant_calendar_columns(financials, question, debug=False):
         query: "What’s apple’s revenue growth for the past 2 years? Compute the correlation between revenue growth and its margin growth. Compare it to msft who had the higher average gross margin?", available columns: ['2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30', '2017-09-30', '2017-07-01', '2017-04-01', '2016-12-31', '2016-09-24', '2016-06-25', '2016-03-26', '2015-12-26', '2015-09-26', '2015-06-27', '2015-03-28', '2014-12-27', '2014-09-27', '2014-06-28', '2014-03-29', '2013-12-28', '2013-09-28', '2013-06-29', '2013-03-30', '2012-12-29', '2012-09-29', '2012-06-30', '2012-03-31', '2011-12-31', '2011-09-24', '2011-06-25', '2011-03-26', '2010-12-25', '2010-09-25', '2010-06-26', '2010-03-27', '2009-12-26', '2009-09-26', '2009-06-27'], answer: ['2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26']
         query: "What’s apple’s revenue growth for the past 2 years? Compute the correlation between revenue growth and its margin growth", available columns: ['2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30', '2017-09-30', '2017-07-01', '2017-04-01', '2016-12-31', '2016-09-24', '2016-06-25', '2016-03-26', '2015-12-26', '2015-09-26', '2015-06-27', '2015-03-28', '2014-12-27', '2014-09-27', '2014-06-28', '2014-03-29', '2013-12-28', '2013-09-28', '2013-06-29', '2013-03-30', '2012-12-29', '2012-09-29', '2012-06-30', '2012-03-31', '2011-12-31', '2011-09-24', '2011-06-25', '2011-03-26', '2010-12-25', '2010-09-25', '2010-06-26', '2010-03-27', '2009-12-26', '2009-09-26', '2009-06-27'], answer: ['2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26']
         query: "What’s apple’s revenue growth for the past 2 years?", available columns: ['2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30', '2017-09-30', '2017-07-01', '2017-04-01', '2016-12-31', '2016-09-24', '2016-06-25', '2016-03-26', '2015-12-26', '2015-09-26', '2015-06-27', '2015-03-28', '2014-12-27', '2014-09-27', '2014-06-28', '2014-03-29', '2013-12-28', '2013-09-28', '2013-06-29', '2013-03-30', '2012-12-29', '2012-09-29', '2012-06-30', '2012-03-31', '2011-12-31', '2011-09-24', '2011-06-25', '2011-03-26', '2010-12-25', '2010-09-25', '2010-06-26', '2010-03-27', '2009-12-26', '2009-09-26', '2009-06-27'], answer: ['2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26']
+        query: "How has AAPL's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if I bought the stock each time?", available columns: ['2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30', '2017-09-30', '2017-07-01', '2017-04-01', '2016-12-31', '2016-09-24', '2016-06-25', '2016-03-26', '2015-12-26', '2015-09-26', '2015-06-27', '2015-03-28', '2014-12-27', '2014-09-27', '2014-06-28', '2014-03-29', '2013-12-28', '2013-09-28', '2013-06-29', '2013-03-30', '2012-12-29', '2012-09-29', '2012-06-30', '2012-03-31', '2011-12-31', '2011-09-24', '2011-06-25', '2011-03-26', '2010-12-25', '2010-09-25', '2010-06-26', '2010-03-27', '2009-12-26', '2009-09-26', '2009-06-27', '2009-03-28', '2008-12-27', '2008-09-27', '2008-06-28', '2008-03-29', '2007-12-29', '2007-09-29', '2007-06-30', '2007-03-31', '2006-12-30', '2006-09-30', '2006-07-01', '2006-04-01'], answer: ['2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30']
+        query: "How has AAPL's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if I bought the stock each time?", available columns: ['2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30', '2017-09-30', '2017-07-01', '2017-04-01', '2016-12-31', '2016-09-24', '2016-06-25', '2016-03-26', '2015-12-26', '2015-09-26', '2015-06-27', '2015-03-28', '2014-12-27', '2014-09-27', '2014-06-28', '2014-03-29', '2013-12-28', '2013-09-28', '2013-06-29', '2013-03-30', '2012-12-29', '2012-09-29', '2012-06-30', '2012-03-31', '2011-12-31', '2011-09-24', '2011-06-25', '2011-03-26', '2010-12-25', '2010-09-25', '2010-06-26', '2010-03-27', '2009-12-26', '2009-09-26', '2009-06-27', '2009-03-28', '2008-12-27', '2008-09-27', '2008-06-28', '2008-03-29', '2007-12-29', '2007-09-29', '2007-06-30', '2007-03-31', '2006-12-30', '2006-09-30', '2006-07-01', '2006-04-01'], answer: ['2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30', '2023-07-01', '2023-04-01', '2022-12-31', '2022-09-24', '2022-06-25', '2022-03-26', '2021-12-25', '2021-09-25', '2021-06-26', '2021-03-27', '2020-12-26', '2020-09-26', '2020-06-27', '2020-03-28', '2019-12-28', '2019-09-28', '2019-06-29', '2019-03-30', '2018-12-29', '2018-09-29', '2018-06-30', '2018-03-31', '2017-12-30']
+    
     """
 
     prompt = """
@@ -2448,6 +2787,7 @@ def get_relevant_calendar_columns(financials, question, debug=False):
         
         
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
+        # import pdb; pdb.set_trace()
         relevant_columns = ast.literal_eval(response[response.find("["):response.find("]")+1])
         # import pdb; pdb.set_trace()
         if debug:
@@ -2899,8 +3239,10 @@ def text_to_graphql(question, entities, debug=False):
 
     try:  
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
-        response = response.replace("```graphql", "").replace("```", "")
+        if "```graphql" in response:
+            response = response.replace("```graphql", "").replace("```", "")
         # import pdb; pdb.set_trace()
+        print(f"graphql:\n{response}")
         return response
     except Exception as e:
         print(f"Error inside text_to_graphql: {e}")
@@ -2942,20 +3284,20 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         Use the name qual_and_quant_df to represent that pandas DataFrame in your response. 
 
         Examples:
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df.drop(['accession_number', 'text', 'ticker'], axis=1, inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'filing_url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df.drop(['accession_number', 'text', 'ticker'], axis=1, inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df.drop(['accession_number', 'text', 'ticker'], axis=1, inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df.drop(['accession_number', 'text', 'ticker'], axis=1, inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
         """
 
         prompt = """
@@ -2998,10 +3340,21 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         print(f"Error inside do_calculate_for_qual_and_quant: {e}")
         import pdb; pdb.set_trace()
         return results
+
+
+def realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key):
+    import pdb; pdb.set_trace()
+    temp_company_financials_df = company_financials_df.copy()
+    temp_df = qual_and_quant_df.copy()
+    company_financials_df = temp_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+    
+    return qual_and_quant_df, company_financials_df
     
 
 
 def perform_quantitative_vector_search(question, results, debug=False):
+    
+    # NOTE: BELOW IS THE CASE WHERE perform_quantitative_vector_search IS CALLED FIRST! (THEREFORE CHECK FOR GET_FINANCIALS (BY TICKER) IN RESULTS ABOVE)
     try:    
         entities = extract_entities_from_user_query(question, debug)
         # import pdb; pdb.set_trace()
@@ -3018,52 +3371,97 @@ def perform_quantitative_vector_search(question, results, debug=False):
 
         # import pdb; pdb.set_trace()
         
-        for ticker in tickers:
-            graphql_query = text_to_graphql(question, entities, debug)
-            response = run_graphql_query_against_weaviate_instance(graphql_query)
+        ticker = tickers[0]
+        graphql_query = text_to_graphql(question, entities, debug)
+        response = run_graphql_query_against_weaviate_instance(graphql_query)
+        
+
+        qual_and_quant_df = pd.DataFrame(response["data"]['Get'])
+
+        if len(qual_and_quant_df) > 0:
+            qual_and_quant_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+            if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
             
-
-            qual_and_quant_df = pd.DataFrame(response["data"]['Get'])
-
-            if len(qual_and_quant_df) > 0:
-                qual_and_quant_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+            if if_should_do_calculate_for_qual_and_quant:
                 qual_and_quant_df = do_calculate_for_qual_and_quant(question, qual_and_quant_df)
-                if "text" in qual_and_quant_df.columns:
-                    qual_and_quant_df.drop(columns=["text"], inplace=True)
-                # qual_and_quant_df.set_index("report_date", inplace=True)
-                # qual_and_quant_df.sort_index(inplace=True, ascending=False)
+            
+            if "text" in qual_and_quant_df.columns:
+                qual_and_quant_df.drop(columns=["text"], inplace=True)
+            # qual_and_quant_df.set_index("report_date", inplace=True)
+            # qual_and_quant_df.sort_index(inplace=True, ascending=False)
 
-                if "QualAndQuant" not in results:
-                    results["QualAndQuant"] = {}
+            
+            import pdb; pdb.set_trace()
+            results["Context"].append(
+                f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
+            )
 
-                if "Context" not in results:
-                    results["Context"] = []
+            # citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in results["data"]["Get"]["Dow30_10K_10Q"]]
+            citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+            citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+            citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
 
-                results["QualAndQuant"] = {ticker: qual_and_quant_df}
 
-                # import pdb; pdb.set_trace()
-                results["Context"].append(
-                    f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
-                )
+            qual_and_quant_df.drop_duplicates(subset=['filing_url', 'page_number'], inplace=True)
+            df_citations_frontend = pd.DataFrame.from_records(citations)
+            df_citations_frontend.drop_duplicates(subset=['url', 'page_number'], inplace=True)
+            df_citations_frontend.reset_index(drop=True, inplace=True)
+            citations = df_citations_frontend.to_dict(orient='records')
 
-                # citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in results["data"]["Get"]["Dow30_10K_10Q"]]
-                citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
-                citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+            df_citations = pd.DataFrame.from_records(citations_for_backend)
+            df_citations.drop_duplicates(subset=['url', 'page_number'], inplace=True)
+
+            import pdb; pdb.set_trace()            
+            # citations = add_highlighting_to_citations_pdfs(citations[:10])
+            
+            if "citations" not in results["finalAnalysis"]:
+                results["finalAnalysis"]["citations"] = []    
+            results["finalAnalysis"]["citations"].extend([citations])
+
+            if "insights" not in results["finalAnalysis"]:
+                results["finalAnalysis"]["insights"] = [] 
+
+            
+            df_citations["temp_date_sort_key"] =  pd.to_datetime(df_citations["report_date"])
+            df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+            df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+            df_citations.reset_index(drop=True, inplace=True)
+            print(f"df_citations:\n{df_citations.head()}")
+            if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
+                company_financials_df = results['GetCompanyFinancials'][ticker]
+                
+                merge_key = None
+                if 'Q' in company_financials_df['report_date'][0]:
+                    merge_key = 'Calendar Date'
+                else:
+                    merge_key = f'report_date'
+
+                qual_and_quant_df.rename({'report_date': merge_key}, axis=1, inplace=True)
+                qual_and_quant_df[merge_key] = pd.to_datetime(qual_and_quant_df[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+                qual_and_quant_df["temp_date_sort_key"] = pd.to_datetime(qual_and_quant_df[merge_key])
+                qual_and_quant_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+                qual_and_quant_df.drop("temp_date_sort_key", axis=1, inplace=True)
+                qual_and_quant_df.reset_index(drop=True, inplace=True)
+
+                qual_and_quant_df = qual_and_quant_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+
+                # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
+                import pdb; pdb.set_trace()
+                # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
+                results['QualAndQuant'][ticker.upper()] = qual_and_quant_df
+                del results['GetCompanyFinancials'][ticker.upper()]
+
+                results["finalAnalysis"]["citations"].extend(citations)
+                results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
+                return results
+
+            else:
+                results["QualAndQuant"][ticker.upper()] = df_citations
                 
                 # citations = add_highlighting_to_citations_pdfs(citations[:10])
 
-                if "finalAnalysis" not in results:
-                    results["finalAnalysis"] = {}
-                
-                if "citations" not in results["finalAnalysis"]:
-                    results["finalAnalysis"]["citations"] = []    
                 results["finalAnalysis"]["citations"].extend(citations)
 
-                if "insights" not in results["finalAnalysis"]:
-                    results["finalAnalysis"]["insights"] = [] 
-
-                if "tables" not in results["finalAnalysis"]:
-                    results["finalAnalysis"]["tables"] = {}
                 
                 # NOTE: fix the ticker to get from the entities
                 # ticker  = [e for e in entities if e["entity"] == "ticker"][0]["value"]
@@ -3074,16 +3472,17 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 results["Context"].append(
                     f"Response to Query: {question} \n\n{response}"
                 ) 
-                print(f"results from vector search: {results}")
+                # print(f"results from vector search: {results}")
+                return results
 
-                if debug:
-                    with open(DEBUG_ABS_FILE_PATH, "a") as f:
-                        f.write(json.dumps({"function": "perform_quantitative_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
-            
-            else:
-                results["Context"].append(
-                    f"Response to Query (retrieved no results): {question} \n\n{response}"
-                ) 
+            if debug:
+                with open(DEBUG_ABS_FILE_PATH, "a") as f:
+                    f.write(json.dumps({"function": "perform_quantitative_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
+        
+        else:
+            results["Context"].append(
+                f"Response to Query (retrieved no results): {question} \n\n{response}"
+            ) 
 
         
         return results
@@ -3123,7 +3522,7 @@ def perform_vector_search(question, results, debug=False):
 
         response = (
             weaviate_client.query
-            .get("Dow30_10K_10Q", ["filing_type", "company_name", "ticker", "accession_number", "filing_url", "text", "page_number", "report_date"])
+            .get("Dow30_10K_10Q", ["filing_type", "logo", "company_name", "ticker", "accession_number", "filing_url", "text", "page_number", "report_date"])
             .with_near_text({
                 "concepts": [question]
             })
@@ -3148,9 +3547,18 @@ def perform_vector_search(question, results, debug=False):
             )
             return results
 
-        citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+        citations = [{"text": t["text"], "id": "", "logo": t["logo"], "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
         citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
         citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+        df_citations_frontend = pd.DataFrame.from_records(citations)
+        df_citations_frontend.drop_duplicates(subset=['title', 'page_number'], inplace=True)
+        df_citations_frontend.reset_index(drop=True, inplace=True)
+        citations = df_citations_frontend.to_dict(orient='records')
+
+        df_citations = pd.DataFrame.from_records(citations_for_backend)
+        df_citations.drop_duplicates(subset=['title', 'page_number'], inplace=True)
+
+        # import pdb; pdb.set_trace()
         
         # citations = add_highlighting_to_citations_pdfs(citations[:10])
         
@@ -3161,19 +3569,51 @@ def perform_vector_search(question, results, debug=False):
         if "insights" not in results["finalAnalysis"]:
             results["finalAnalysis"]["insights"] = [] 
 
-        df_citations = pd.DataFrame.from_records(citations_for_backend)
+        
         df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations["report_date"])
-        df_citations.sort_values(by=["temp_date_sort_key"], axis=1, ascending=False, inplace=True)
-        df_citations.drop("temp_date_sort_key", inplace=True)
+        df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+        df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+        df_citations.reset_index(drop=True, inplace=True)
         print(f"df_citations:\n{df_citations.head()}")
-        results["VectorSearch"][ticker.upper()] = df_citations
         
+        if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
+            company_financials_df = results['GetCompanyFinancials'][ticker]
+            
+            merge_key = None
+            if 'Q' in company_financials_df['report_date'][0]:
+                merge_key = 'Calendar Date'
+            else:
+                merge_key = f'report_date'
+
+            df_citations.rename({'report_date': merge_key}, axis=1, inplace=True)
+            df_citations[merge_key] = pd.to_datetime(df_citations[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+            df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations[merge_key])
+            df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+            df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+            df_citations.reset_index(drop=True, inplace=True)
+
+            df_citations = df_citations.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+
+            # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
+            import pdb; pdb.set_trace()
+            # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
+            results['VectorSearch'][ticker.upper()] = df_citations
+            del results['GetCompanyFinancials'][ticker.upper()]
+
+            results["finalAnalysis"]["citations"].extend(citations)
+            results["finalAnalysis"]["tables"][ticker.upper()] = df_citations
+            return results
         
-        response = '\n\n'.join([c["text"] for c in citations])
-        results["Context"].append(
-            f"Response to Query: {question} \n\n{response}"
-        ) 
-        print(f"results from vector search: {results}")
+        else:
+            results["VectorSearch"][ticker.upper()] = df_citations
+            
+            
+            response = '\n\n'.join([c["text"] for c in citations])
+            results["Context"].append(
+                f"Response to Query: {question} \n\n{response}"
+            ) 
+            # print(f"results from vector search: {results}")
+            return results
 
         if debug:
             with open(DEBUG_ABS_FILE_PATH, "a") as f:
@@ -3380,10 +3820,12 @@ def get_fiscal_or_calendar_by_user_query(question):
     """
 
     system_prompt = """
-    You are a helpful assistant that analyzes financial data. Given a user question, determine which of the
-    dates are required to answer the question. The response should be a JSON list of the values  as shown in the examples below:
+    You are a helpful assistant that analyzes financial data. Given a user question, determine whether 'fiscal' or 'calendar' dates should be used to answer the question. Unless other explicitly states via reference to 'fiscal year', 'FY', etc. 
+    the response should default to 'calendar'. Note that your response should be a JSON list containing only one element. The one element in your JSON list response should be either the string value 'fiscal' or 'calendar'. Your response should contain nothing else
+    other than the JSON list. See the examples below:
 
-    Examples:     
+    Examples: 
+        query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: ['calendar']    
         query: "compare the cogs between 2021 and 2023 between AMZN and its comps", answer: ['calendar']
         query: "investigate the trends in JP Morgan's net interest margin and loan growth over the past 2 years. How have changes in interest rates and economic conditions influenced their profitability?", answer: ['calendar']
         query: "what's amzn's cogs from 2022 to 2023?", answer: ['calendar']
@@ -3393,6 +3835,10 @@ def get_fiscal_or_calendar_by_user_query(question):
         query: "How has amzn's cogs grown annually quarter over quarter over 2023 vs 2022?", answer: ['calendar']
         query: "What’s apple’s revenue growth for the past 2 years? Compute the correlation between revenue growth and its margin growth", answer: ['calendar']
         query: "What’s apple’s revenue growth for the past 2 years?", answer: ['calendar']
+        query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: ['calendar']
+        query: "You are an investment banker and your only resource(s) to answer the following question is (are): the statement of financial position and the cash flow statement. Here's the question: what is the FY2015 operating cash flow ratio for Adobe? Operating cash flow ratio is defined as: cash from operations / total current liabilities. Round your answer to two decimal places.", answer: ['fiscal']
+        query: "What are the debt levels of MSFT?", answer: ['calendar']
+        query: "What are the debt levels of AAPL?", answer: ['calendar']
     """
 
     prompt = """
@@ -3448,9 +3894,62 @@ def get_stock_financials(ticker, mode='calendar', limit=5, debug=False):
         result_df.rename({"Fiscal Date": "report_date"}, axis=1, inplace=True)
         result_df.set_index("report_date", inplace=True)
 
+
+
     
     result_df.drop(['symbol', 'calendarYear', 'reportedCurrency', 'cik', 'fillingDate', 'acceptedDate', 'period'], axis=1, inplace=True)
     return result_df.T
+
+
+def should_do_calculate_for_qual_and_quant(question, debug=False):
+    system_prompt = """ 
+    You are a tool used to guide a RAG system. Your job is to determine where a calculator function needs to be called or not.
+    Your response should be a string that is either 'True' or 'False'. Your response should not contain anything other than either 
+    'True' or 'False'. Given a user query and a supplied json contain data used to answer the user determine wheter a calculation needs
+    to be executed or if the current raw json data is sufficient to answer the quesiton and thus doesn't require any further calculations.
+    Below are some examples of user query, json data, and response triplets.
+
+    Examples:
+    user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
+    user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
+    user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
+    user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
+    user query: "how many times did AAPL mention macro concerns in their filings since 2023? whats been the stock performance during these instances?", answer: "True"
+    user query: "how many times did MSFT mention the activision anti-trust case in their filings since 2021?", answer: "True"
+    user query: "how many times did AAPL mention macro concerns in their filings since 2023? whats been the stock performance during these instances?", answer: "True"
+    user query: "how many times did MSFT mention the activision anti-trust case in their filings since 2021?", answer: "True"
+    
+    """
+
+    prompt = """
+    user query: {question}
+    """
+
+    response = openai_client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt.format(question=question)}
+        ],
+        
+    )
+
+    try:
+        
+        import pdb 
+        # pdb.set_trace()
+        # print(f"financials inside should_local_calculate: {financials.to_json()}")
+        response = json.loads(response.to_json())["choices"][0]["message"]["content"]
+        calculation_required = ast.literal_eval(response)
+        if debug:
+            with open(DEBUG_ABS_FILE_PATH, "a") as f:
+                f.write(json.dumps({"function": "should_local_calculate", "inputs": [question, financials], "outputs": [{"calculation_required": calculation_required}]}, indent=6))
+        
+        print(f"response from should_do_calculate_for_qual_and_quant: {response}")
+        return calculation_required
+    except Exception as e:
+        print(f"Error inside should_do_calculate_for_qual_and_quant: {e}")
+        return False
 
 
 def get_financials(question, results, debug=False):
@@ -3462,6 +3961,7 @@ def get_financials(question, results, debug=False):
                 tickers.append(ent["value"])
 
         fiscal_or_calendar = get_fiscal_or_calendar_by_user_query(question)
+        # import pdb; pdb.set_trace()
         for ticker in tickers:
             if "processed_tickers" not in results:
                 results["processed_tickers"] = []
@@ -3480,9 +3980,14 @@ def get_financials(question, results, debug=False):
             if fiscal_or_calendar == "fiscal":
                 other_date_column_to_keep = "Calendar Date"
                 relevant_columns = get_relevant_fiscal_columns(list(temp_financials.columns), question)
-            else:
+            elif fiscal_or_calendar == "calendar":
                 other_date_column_to_keep = "Fiscal Date"
                 relevant_columns = get_relevant_calendar_columns(list(temp_financials.columns), question)
+            else:
+                print(f"[WARNING] get_fiscal_or_calendar_by_user_query return {fiscal_or_calendar}")
+                other_date_column_to_keep = "Calendar Date"
+                relevant_columns = get_relevant_fiscal_columns(list(temp_financials.columns), question)
+
 
             print(f"relevant_columns: {relevant_columns}")
 
@@ -3613,10 +4118,11 @@ def merge_charts(results, debug=False):
 
 def merge_tables(results, debug=False):
     try:
+        import pdb; pdb.set_trace()
         if len(results["finalAnalysis"]["tables"]) == 0:
             return results
 
-        import pdb; pdb.set_trace()
+        
         # dfs = [t.reset_index().rename({"report_date": f"{k}_report_date"}, axis=1) for k, t in results["finalAnalysis"]["tables"].items()]
         dfs = [t.reset_index().rename({"report_date": f"{k}_report_date"}, axis=1) for k, t in results["finalAnalysis"]["tables"].items()]
         # import pdb; pdb.set_trace()
@@ -3647,7 +4153,13 @@ def merge_frames(results, debug=False):
         # if len(results["finalAnalysis"]["tables"]) == 0:
         #     return results
         all_tickers = set()
-        results_sections_of_interest = ["MarketData", "QualAndQuant", "GetCompanyFinancials"]
+        # if len(results["RunBackTest"]) > 0:
+        #     results_sections_of_interest = ["RunBackTest"]
+        # else:
+        #     results_sections_of_interest = ["GetNews", "MarketData", "QualAndQuant", "GetCompanyFinancials"]
+
+        results_sections_of_interest = ["VectorSearch", "GetNews", "MarketData", "QualAndQuant", "GetCompanyFinancials"]
+        # import pdb; pdb.set_trace()
         for result_section_of_interest in  results_sections_of_interest:
             data_per_section = results[result_section_of_interest]
             if len(data_per_section) == 0:
@@ -3702,7 +4214,7 @@ def merge_frames(results, debug=False):
         results["finalAnalysis"]["workbookData"] = table['Tabular results']
         return results
     except Exception as e:
-        print(f"Error inside merge_tables: {e}")
+        print(f"Error inside merge_frames: {e}")
         return results
     
 
@@ -3771,6 +4283,7 @@ def get_final_analysis(query, results, debug=False):
             with open(DEBUG_ABS_FILE_PATH, "a") as f:
                 f.write(json.dumps({"function": "get_final_analysis", "inputs": [query], "outputs": [{"response": response}]}, indent=6))
         # print(f"results: {results}")
+        # import pdb; pdb.set_trace()
         return results
     except Exception as e:
         print(f"Error parsing ChatGPT response: {e}")

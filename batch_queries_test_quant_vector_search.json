@@ -1,0 +1,94 @@
+def extract_entities_from_user_query_for_perform_quantitative_vector_search(question, debug=False):
+    system_prompt = """ 
+    You are an NLP extraction tool. Your task is to take a user query and extract the following entity types if they appear in the query: 'ticker', 'company', 'dates'.
+    Below are the descriptions of the values corresponding to each entity type:
+        - 'ticker': a company ticker.
+        - 'company': a company name.
+        - 'to_date': A date that should be a string in the form 'YYYY-MM-DD'. If there are multiple dates in the list they should be sorted such that the most recent date appears last and is mapped to the 'to_date' entity. If there are multiple dates the most recent date should be 
+                    the 'to_date' entity and the oldest date should be the 'from_date' entity.
+        - 'from_date': A date that should be a string in the form 'YYYY-MM-DD'. If there are multiple dates in the list they should be sorted such that the most recent date appears last and is mapped to the 'to_date' entity. If there are multiple dates the most recent date should be 
+                    the 'to_date' entity and the oldest date should be the 'from_date' entity.
+        
+
+    The response should be a JSON list of dictionaries where each dictionary element contains a key called 'entity' whose value is the entity type extracted 
+    (i.e. is one of the listed types above) and contains a key called 'value' that is the extracted value from the user query. If the entity type doesn't appear in the user 
+    query then it should not appear in the output.
+
+    ## EXAMPLES
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Apple (AAPL). Summarize the potential impacts on their operations.", answer: answer: [('ticker', 'AAPL'), ('from_date', '2024-09-30')]
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Boeing (BA). Summarize the potential impacts on their operations.", answer: answer: [('ticker', 'BA'), ('from_date', '2024-09-30')]
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Home Depot (HD). Summarize the potential impacts on their operations.", answer: answer: [('ticker', 'HD'), ('from_date', '2024-09-30')]
+    query: "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for Coca-Cola (KO). How has their strategy evolved over time?", answer: [('ticker', 'KO'), ('from_date', '2018-01-01'), ('to_date', '2023-12-31')]
+    query: "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for PepsiCo (PEP). How has their strategy evolved over time?", answer: [('ticker', 'PEP'), ('from_date', '2018-01-01'), ('to_date', '2023-12-31')] 
+    query: "whats the variance between the inventory ratio and return on assets growth for first 3 quarters of 2021?", answer: [('ticker', 'AAPL'), ('from_date', '2021-01-01'), ('to_date', '2021-09-30')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "what's ebay's revenue growth (%) quarter over quarter for 2022 versus its comps", answer: [('ticker', 'EBAY'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "compare the cogs between 2021 and 2023 between AMZN and its comps", answer: [('ticker', 'AMZN')]
+    query: "compare the cogs between 2019 and 2021 between wmt and its comps", answer: [('ticker', 'WMT')]
+    query: "compare the cogs between 2021 and 2022 between costco and its comps", answer: [('ticker', 'COST')]
+    query: "Compare Amazon's logistics and fulfillment expenses as a percentage of net sales over the past 2 years. How have changes in these expenses impacted Amazon's operating margin, and what strategies have been implemented to optimize their supply chain efficiency?", answer: [('ticker', 'AMZN'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "Compare MSFT's cloud sales growth to IBM's", answer: [('ticker', 'MSFT'), ('ticker', 'IBM')]
+    query: "Compare the research and development investments as a percentage of revenue for J&J and Merck over the past three years. Historically how have their drug launches impacted revenue growth?", answer: [('ticker', 'JNJ'), ('ticker', 'MRK'), ('from_date', '2021-09-30'), ('to_date', '2024-06-30')]
+    query: "Compare the research and development investments as a percentage of revenue for J&J and Merck over the past three years. Historically how have their drug launches impacted revenue growth?", answer: [('ticker', 'JNJ'), ('ticker', 'MRK'), ('from_date', '2021-09-30'), ('to_date', '2024-06-30')]
+    query: "what's amzn's revenue growth during 2023 versus its comps", answer: [('ticker', 'AMZN'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has apple’s gross margins trended compared to Intel and Microsoft’s over the past 3 years?",answer: [('ticker', 'AAPL'), ('ticker', 'INTC'), ('ticker', 'MSFT'), ('from_date', '2021-09-30'), ('to_date', '2024-06-30')]
+    query: "How many times did aapl discuss artificial intelligence in their most recent 10K or 10Q?", answer: [('ticker', 'AAPL'), ('from_date', '2024-06-30')]
+    """
+
+    prompt = """
+    query: {question}
+    """
+
+    response = openai_client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt.format(question=question)}
+        ],   
+    )
+
+    try:
+        content = json.loads(response.to_json())["choices"][0]["message"]["content"]
+        if "json" in content:
+            entities = ast.literal_eval(content[content.find("```json\n")+len("```json\n"):len(content)-3])
+        else:
+            entities = ast.literal_eval(content)    
+
+        if debug:
+            with open(DEBUG_ABS_FILE_PATH, "a") as f:
+                f.write(json.dumps({"function": "extract_entities_from_user_query", "inputs": [question], "outputs": [{"entities": entities}]}, indent=6))
+        return entities
+    except Exception as e:
+        print(f"Error inside extract_entities_from_user_query: {e}")
+        return []
+
+
+
+
+
+
+
+
+
+
+
+

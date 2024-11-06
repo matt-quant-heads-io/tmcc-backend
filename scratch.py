@@ -386,7 +386,7 @@ def map_list_of_companies_and_query_to_list_of_queries(query, companies, debug=F
         return processed_queries
     except Exception as e:
         print(f"Error inside map_list_of_companies_and_query_to_list_of_queries: {e}")
-        return processed_queries
+        return [query]
 
 
 
@@ -412,7 +412,7 @@ def map_competitors_and_query_to_list_of_queries(query, competitors, debug=False
         model="gpt-4o",
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt.format(question=question, competitors=competitors)}
+            {"role": "user", "content": prompt.format(question=query, competitors=competitors)}
         ],   
     )
 
@@ -450,6 +450,11 @@ def split_companies(query, debug=False):
     query: "how has Ford's revenue trended since 2020? what has been the stock performance over that time period? Compare to TESLA", answer: ["how has F's revenue trended since 2020? what has been the stock performance over that time period?", "how has TSLA's revenue trended since 2020? what has been the stock performance over that time period?"]
     query: "Compare Ford versus Tesla's revenue growth and stock performance since 2020? Which has appreciated more and by how much?", answer: ["What's F's revenue growth and stock performance since 2020?", "What's TSLA's revenue growth and stock performance since 2020?"]
     query: "How do the debt levels of Apple and MSFT compare?", answer: ["What are the debt levels of AAPL?", "What are the debt levels of MSFT?"]
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Apple (AAPL), Boeing (BA), and Home Depot (HD). Summarize the potential impacts on their operations.", answer: ["Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Apple (AAPL)", "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Boeing (BA)", "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Home Depot (HD)"]
+    query: "Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for all technology companies in the Dow 30, including Microsoft (MSFT), Intel (INTC), and IBM.", answer: ["Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for Microsoft (MSFT)", "Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for Intel (INTC)", "Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for IBM"]
+    query: "Analyze the sentiment of the forward-looking statements in the latest 10-K filings for JPMorgan Chase (JPM) and Goldman Sachs (GS). Identify whether the tone is predominantly positive, negative, or neutral.", answer: ["Analyze the sentiment of the forward-looking statements in the latest 10-K filings for JPMorgan Chase (JPM). Identify whether the tone is predominantly positive, negative, or neutral.", "Analyze the sentiment of the forward-looking statements in the latest 10-K filings for Goldman Sachs (GS). Identify whether the tone is predominantly positive, negative, or neutral."]
+    query: "Extract discussions on 'climate change risk' within 10-K filings for all energy and industrial companies in the Dow 30, including Chevron (CVX) and Caterpillar (CAT). What are the common risk mitigation strategies noted?", answer: ["Extract discussions on 'climate change risk' within 10-K filings for Chevron (CVX). What are the common risk mitigation strategies noted?", "Extract discussions on 'climate change risk' within 10-K filings for Caterpillar (CAT). What are the common risk mitigation strategies noted?"]
+    query: "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for Coca-Cola (KO) and PepsiCo (PEP). How have these strategies evolved over time?", answer: ["Summarize the revenue growth strategies in 10-K and 10-Q filings from 2018 to 2023 for Coca-Cola (KO). How have their strategies evolved over time?","Summarize the revenue growth strategies in 10-K and 10-Q filings from 2018 to 2023 for PepsiCo (PEP). How have their strategies evolved over time?"]
     """
 
     prompt = """
@@ -484,6 +489,7 @@ def determine_query_pattern(question, debug=False):
     'neither' and NOTHING else.
 
     Examples:
+    query: "How have the inventory ratios of the largest dow 30 tech stocks trended since 2022? How do they differ in how they discuss inventory management strategies in their filings?", answer: 'get_list_of_companies'
     query: "whats amzn's quarterly revenue for 2022? compare this to its comps", answer: "get_competitors"
     query: "whats Amazon's quarterly revenue for 2022?", answer: 'neither'
     query: "whats target's cogs between 2021 and 2023?", answer: 'neither'
@@ -491,6 +497,12 @@ def determine_query_pattern(question, debug=False):
     query: "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after? compare this their comps", answer: 'get_competitors'
     query: "Of the largest technology stocks in the dow 30, which have revenue growth exceeding 10%?", answer: 'get_list_of_companies'
     query: "Who has the largest revenue growth out of AAPL, MSFT, and LMT?", answer: 'split_companies'
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Apple (AAPL), Boeing (BA), and Home Depot (HD). Summarize the potential impacts on their operations.", answer: 'split_companies'
+    query: "Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for all technology companies in the Dow 30, including Microsoft (MSFT), Intel (INTC), and IBM.", answer: 'split_companies' 
+    query: "Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for all technology companies in the Dow 30", answer: 'get_list_of_companies' 
+    query: "Analyze the sentiment of the forward-looking statements in the latest 10-K filings for JPMorgan Chase (JPM) and Goldman Sachs (GS). Identify whether the tone is predominantly positive, negative, or neutral.", answer: 'split_companies' 
+    query: "Extract discussions on 'climate change risk' within 10-K filings for all energy and industrial companies in the Dow 30, including Chevron (CVX) and Caterpillar (CAT). What are the common risk mitigation strategies noted?", answer: 'split_companies'
+    query: "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for Coca-Cola (KO) and PepsiCo (PEP). How have these strategies evolved over time?", answer: 'split_companies'   
     """
 
     prompt = """
@@ -624,9 +636,8 @@ def get_list_of_companies(question, debug=False):
     )
 
     try:
-        
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
-        competitors = ast.literal_eval(response[response.find("["):response.find("]")+1])
+        competitors = ast.literal_eval(response[response.find("["):response.find("]")+1])[:3]
         if debug:
             with open(DEBUG_ABS_FILE_PATH, "a") as f:
                 f.write(json.dumps({"function": "get_list_of_companies", "inputs": [question], "outputs": [{"competitors": competitors}]}, indent=6))
@@ -790,7 +801,7 @@ query:
 relevant_rows: ['equity', 'liabilities']
 relevant_columns: ['Q3 2023', 'Q2 2023', 'Q1 2023', 'Q4 2022', 'Q3 2022', 'Q2 2022', 'Q1 2022', 'Q4 2021', 'Q3 2021', 'Q2 2021', 'Q1 2021', 'Q4 2020', 'Q3 2020', 'Q2 2020', 'Q1 2020', 'Q4 2019', 'Q3 2019', 'Q2 2019', 'Q1 2019']
 """
-def get_competitors(question, results, debug=False):
+def get_competitors(question, debug=False):
     system_prompt = """ 
     You are a hedge fund analyst tasked with identifying company competitors. Gien a user query return a JSON list of company competitors. 
     Each competitor in the list should be a string ticker. Your response should only contain the list of tickers that are competitors to
@@ -818,7 +829,7 @@ def get_competitors(question, results, debug=False):
         if debug:
             with open(DEBUG_ABS_FILE_PATH, "a") as f:
                 f.write(json.dumps({"function": "get_competitors", "inputs": [question], "outputs": [{"competitors": competitors}]}, indent=6))
-        return competitors
+        return competitors[:3]
     except Exception as e:
         print(f"Error inside get_competitors: {e}")
         return []
@@ -1800,6 +1811,8 @@ def do_calculate_for_get_market_data(question, df_market_data):
         'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=-20)[::-1].cumsum()[::-1].round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).cumsum().round(2);" 
         'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=-20)[::-1].cumsum()[::-1].round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).cumsum().round(2);"
         'user query': "How has apple’s stock performed post 2021 in the following quarters after management has referenced macro concerns?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': How many times since 2020 has MSFT mentioned global macro concerns? Would I have made money if I bought the stock at these times, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)
+       
         """
 
         prompt = """
@@ -1822,6 +1835,7 @@ def do_calculate_for_get_market_data(question, df_market_data):
         print(f"'data': {list(df_market_data.columns)}")
         print(f"'answer': {new_response}")
         # import pdb; pdb.set_trace()
+        
 
         exec(new_response)
 
@@ -1899,7 +1913,7 @@ def should_calculate_for_get_market_data(question, df_columns):
 def get_market_data(question, results, debug=False):
     try:
         # symbol, multiplier=1, timespan="day", from_date="", to_date="",
-        
+        # import pdb; pdb.set_trace()
         entities = extract_entities_from_user_query(question)
         ticker = [ent["value"] for ent in entities if ent["entity"] == "ticker"][0]
         solo_call = False
@@ -1995,7 +2009,7 @@ def get_market_data(question, results, debug=False):
                 else:
                     merge_key = f'report_date'
 
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 qual_and_quant_vector_search_df[merge_key] = pd.to_datetime(qual_and_quant_vector_search_df[merge_key]).dt.strftime('%Y-%m-%d')
                 to_date = qual_and_quant_vector_search_df[merge_key][0]
                 from_date = qual_and_quant_vector_search_df[merge_key][len(qual_and_quant_vector_search_df)-1]
@@ -2504,8 +2518,9 @@ def get_trade_stats(backtest_df, long_short_multiplier):
     # trades_df['1 QTR'] = (trades_df['Close'] - trades_df['1 QTR']) / trades_df['Close']
     trades_df['Cumul. Return'] = trades_df['1 QTR'][::-1].cumsum()
     total_num_trades = len(trades_df)
-    num_winning_trades = (len(trades_df[trades_df['1 QTR']>0.0])*long_short_multiplier) + (len(trades_df[trades_df['1 QTR']<0.0])*long_short_multiplier)
-    winning_pct = float(num_winning_trades) / float(num_winning_trades)
+    num_winning_trades = float(total_num_trades) - float((len(trades_df[trades_df['1 QTR']<0.0])*long_short_multiplier)) #+ (len(trades_df[trades_df['1 QTR']<0.0])*long_short_multiplier)
+    num_losing_trades = total_num_trades - int(num_winning_trades)
+    winning_pct = float(num_winning_trades) / (float(num_winning_trades)+float(num_losing_trades))
     avg_winning_trade = None
     avg_losing_trade = None
     largest_winning_trade = None
@@ -2518,7 +2533,7 @@ def get_trade_stats(backtest_df, long_short_multiplier):
         avg_losing_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].mean()
         largest_winning_trade = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].max()
         largest_losing_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].max()
-        profit_factor = trades_df[trades_df['1 QTR']>0.0]['1 QTR'].sum() / trades_df[trades_df['1 QTR']<0.0]['1 QTR'].sum()
+        profit_factor = abs(trades_df[trades_df['1 QTR']>0.0]['1 QTR'].sum() / trades_df[trades_df['1 QTR']<0.0]['1 QTR'].sum())
         expectation = avg_winning_trade*winning_pct + avg_losing_trade*(1-winning_pct)
     else:
         avg_winning_trade = trades_df[trades_df['1 QTR']<0.0]['1 QTR'].mean()
@@ -2557,7 +2572,11 @@ def run_backtest(query, results, debug=False):
     entities = extract_entities_from_user_query(query, debug=debug)
     # import pdb; pdb.set_trace()
     ticker = [ent["value"] for ent in entities if ent["entity"]=="ticker"][0]
-    market_data_df = results["MarketDataForBacktest"][ticker]
+    # import pdb; pdb.set_trace()
+    if ticker in results["MarketDataForBacktest"]:
+        market_data_df = results["MarketDataForBacktest"][ticker]
+    elif ticker in results["MarketData"]:
+        market_data_df = results["MarketData"][ticker]
     # NOTE: implement get_long_short_multiplier
     long_short_multiplier = 1 #get_long_short_multiplier(query)
     backtest_df = market_data_df.copy()
@@ -2572,7 +2591,7 @@ def run_backtest(query, results, debug=False):
     # filled_trade_dict = fill_trade_dict(trade_dict)
     # trade_df = pd.DataFrame(filled_trade_dict)
 
-    import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     trades_table = {
         "headers": list(trades_df.columns),
         "rows": trades_df.values.tolist()
@@ -2954,6 +2973,9 @@ def add_highlighting_to_citations_pdfs(citations):
 def text_to_graphql(question, entities, debug=False):
     # import pdb; pdb.set_trace()
     system_prompt = """Generate a GraphQL query for a Weaviate backend database that retrieves 10Q and 10K company financials filings based on specified filters, a user-provided question, and the specified collection.
+    When applying filing_type filter if you see '10-Q' in the Question map it to '10Q'. Likewise, when you see '10-K' in the Question map it to '10K'. In other words, do not include the hyphen for the 'filing_type' filter.
+    Also next include the graphql keyword 'limit' in your response since we do not want to limit the number of retrieved documents arbitrarily. If the question contains both '10-K' and '10-Q' then DO NOT use the 'filing_type'
+    as a filter in your graphql response.
 
     # Input Details
     - **Collection**
@@ -2981,34 +3003,6 @@ def text_to_graphql(question, entities, debug=False):
 
     # Examples
 
-    
-    **Example Input**: 
-    Question: "how many times did AAPL mention macro concerns in their filings since 2023? whats been the stock performance during these instances?"
-    Collection: "Dow30_10K_10Q"
-    Filters: { "ticker": "AAPL",  "from_date":  "2023-01-01T00:00:00.00Z", "to_date": "2024-06-30T00:00:00.00Z"}
-
-    **Example Output**:
-    ```graphql
-    {
-        Get {
-            Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did CRM mention macro concerns in their filings since 2023? whats been the stock performance during these instances?"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["text"], operator: Like, valueText: "*macro*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
-            ) {
-            ticker
-            text
-            report_date
-            accession_number
-            company_name
-            filing_type
-            page_number
-            filing_url
-            }
-        }
-    }
-    ```
-    
-    
     **Example Input**: 
     Question: "how many times did aapl mention macro demand concerns in their filings since 2023?"
     Collection: "Dow30_10K_10Q"
@@ -3019,34 +3013,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did aapl mention macro demand concerns in their filings since 2023?"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["text"], operator: Like, valueText: "*macro*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
-            ) {
-            ticker
-            text
-            report_date
-            accession_number
-            company_name
-            filing_type
-            page_number
-            filing_url
-            }
-        }
-    }
-    ```
-
-    **Example Input**: 
-    Question: "how many times did aapl mention macro demand concerns in their filings since 2023?"
-    Collection: "Dow30_10K_10Q"
-    Filters: { "ticker": "AAPL",  "from_date":  "2023-01-01T00:00:00.00Z", "to_date": "2024-06-30T00:00:00.00Z"}
-
-    **Example Output**:
-    ```graphql
-    {
-        Get {
-            Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did aapl mention macro demand concerns in their filings since 2023?"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["text"], operator: Like, valueText: "*macro*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
+            nearText: {concepts: ["macro demand concerns"]}
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
             ) {
             ticker
             text
@@ -3071,8 +3039,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did MSFT mention the activision anti-trust case in their filings?"]}
-            where: {operator: And, operands: [{path: ["ticker"],  operator: Equal, valueText: "MSFT"}, path: ["text"], operator: Like, valueText: "*activision*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+            nearText: {concepts: ["activision anti-trust case"]}
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
             ) {
             ticker
             text
@@ -3097,8 +3065,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did MSFT mention the activision anti-trust case in their filings?"]}
-            where: {operator: And, operands: [{path: ["ticker"],  operator: Equal, valueText: "MSFT"}, path: ["text"], operator: Like, valueText: "*activision*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+            nearText: {concepts: ["activision anti-trust case"]}
+            where: {operator: And, operands: [{path: ["ticker"],  operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
             ) {
             ticker
             text
@@ -3123,7 +3091,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["text"], operator: Like, valueText: "*supply*"}, {path: ["text"], operator: Like, valueText: "*chain*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2017-06-27T00:00:00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2023-06-27T00:00:00Z"}]}
+            nearText: {concepts: ["supply chain issues"]}
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2017-06-27T00:00:00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2023-06-27T00:00:00Z"}]}
             ) {
             ticker
             text
@@ -3148,8 +3117,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["text"], operator: Like, valueText: "*supply*"}, {path: ["text"], operator: Like, valueText: "*chain*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-06-30T00:00:00Z"}]}
+            nearText: {concepts: ["supply chain issues"]}
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-06-30T00:00:00Z"}]}
             ) {
             ticker
             text
@@ -3172,8 +3141,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["text"], operator: Like, valueText: "*artificial intelligence*"}]}
+            nearText: {concepts: ["artificial intelligence"]}
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}]}
             ) {
             ticker
             text
@@ -3196,8 +3165,8 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["how many times has CAT raised international growth concerns in their filings over the past 2 years?"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "CAT"}, {path: ["text"], operator: Like, valueText: "*international*"}, {path: ["text"], operator: Like, valueText: "*growth*"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2022-09-30T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
+            nearText: {concepts: ["international growth concerns"]}
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "CAT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2022-09-30T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
             ) {
             ticker
             text
@@ -3264,10 +3233,14 @@ def run_graphql_query_against_weaviate_instance(query):
     }
 
     response = requests.post(url, json=payload, headers=headers)
+    if response.status_code == 200:
+        succeeded = True
+    else:
+        succeeded = False
     # import pdb; pdb.set_trace()
 
     print(response.json())
-    return response.json()
+    return response.json(), succeeded
 
 
 
@@ -3284,20 +3257,21 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         Use the name qual_and_quant_df to represent that pandas DataFrame in your response. 
 
         Examples:
+        'user query': "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], answer: ""qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))""
         'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
         'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
         'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
         'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df.drop(['accession_number', 'text', 'ticker'], axis=1, inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True); qual_and_quant_df.drop(['accession_number', 'text', 'ticker'], axis=1, inplace=True); qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
         """
 
         prompt = """
@@ -3323,7 +3297,8 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         print(f"'data': {list(qual_and_quant_df.columns)}")
         print(f"'answer': {new_response}")
         # import pdb; pdb.set_trace()
-
+        if "filing_url" in new_response:
+            new_resposne = new_response.replace('filing_url', 'url')
         exec(new_response)
 
         if isinstance(qual_and_quant_df, pd.Series):
@@ -3339,7 +3314,7 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
     except Exception as e:
         print(f"Error inside do_calculate_for_qual_and_quant: {e}")
         import pdb; pdb.set_trace()
-        return results
+        return qual_and_quant_df
 
 
 def realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key):
@@ -3349,7 +3324,90 @@ def realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, 
     company_financials_df = temp_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
     
     return qual_and_quant_df, company_financials_df
-    
+
+
+def extract_entities_from_user_query(question, debug=False):
+    system_prompt = """ 
+    You are an NLP extraction tool. Your task is to take a user query and extract the following entity types if they appear in the query: 'ticker', 'company', 'dates'.
+    Below are the descriptions of the values corresponding to each entity type:
+        - 'ticker': a company ticker.
+        - 'company': a company name.
+        - 'to_date': A date that should be a string in the form 'YYYY-MM-DD'. If there are multiple dates in the list they should be sorted such that the most recent date appears last and is mapped to the 'to_date' entity. If there are multiple dates the most recent date should be 
+                    the 'to_date' entity and the oldest date should be the 'from_date' entity.
+        - 'from_date': A date that should be a string in the form 'YYYY-MM-DD'. If there are multiple dates in the list they should be sorted such that the most recent date appears last and is mapped to the 'to_date' entity. If there are multiple dates the most recent date should be 
+                    the 'to_date' entity and the oldest date should be the 'from_date' entity.
+        
+
+    The response should be a JSON list of dictionaries where each dictionary element contains a key called 'entity' whose value is the entity type extracted 
+    (i.e. is one of the listed types above) and contains a key called 'value' that is the extracted value from the user query. If the entity type doesn't appear in the user 
+    query then it should not appear in the output.
+
+    ## EXAMPLES
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Apple (AAPL). Summarize the potential impacts on their operations.", answer: answer: [('ticker', 'AAPL'), ('from_date', '2024-09-30')]
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Boeing (BA). Summarize the potential impacts on their operations.", answer: answer: [('ticker', 'BA'), ('from_date', '2024-09-30')]
+    query: "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Home Depot (HD). Summarize the potential impacts on their operations.", answer: answer: [('ticker', 'HD'), ('from_date', '2024-09-30')]
+    query: "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for Coca-Cola (KO). How has their strategy evolved over time?", answer: [('ticker', 'KO'), ('from_date', '2018-01-01'), ('to_date', '2023-12-31')]
+    query: "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for PepsiCo (PEP). How has their strategy evolved over time?", answer: [('ticker', 'PEP'), ('from_date', '2018-01-01'), ('to_date', '2023-12-31')] 
+    query: "whats the variance between the inventory ratio and return on assets growth for first 3 quarters of 2021?", answer: [('ticker', 'AAPL'), ('from_date', '2021-01-01'), ('to_date', '2021-09-30')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "What is aapl's revenue for 2023?", answer: [('ticker', 'AAPL'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has amzn's income tax trended for the past 10 years?", answer: [('ticker', 'AMZN')]
+    query: "how has msft's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "how has MSFT's revenue trended in the past 2 years?", answer: [('ticker', 'MSFT'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "How has amzn's revenue trended?", answer: [('ticker', 'AMZN')]
+    query: "what's ebay's revenue growth (%) quarter over quarter for 2022 versus its comps", answer: [('ticker', 'EBAY'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "compare the cogs between 2021 and 2023 between AMZN and its comps", answer: [('ticker', 'AMZN')]
+    query: "compare the cogs between 2019 and 2021 between wmt and its comps", answer: [('ticker', 'WMT')]
+    query: "compare the cogs between 2021 and 2022 between costco and its comps", answer: [('ticker', 'COST')]
+    query: "Compare Amazon's logistics and fulfillment expenses as a percentage of net sales over the past 2 years. How have changes in these expenses impacted Amazon's operating margin, and what strategies have been implemented to optimize their supply chain efficiency?", answer: [('ticker', 'AMZN'), ('from_date', '2022-09-30'), ('to_date', '2024-06-30')]
+    query: "Compare MSFT's cloud sales growth to IBM's", answer: [('ticker', 'MSFT'), ('ticker', 'IBM')]
+    query: "Compare the research and development investments as a percentage of revenue for J&J and Merck over the past three years. Historically how have their drug launches impacted revenue growth?", answer: [('ticker', 'JNJ'), ('ticker', 'MRK'), ('from_date', '2021-09-30'), ('to_date', '2024-06-30')]
+    query: "Compare the research and development investments as a percentage of revenue for J&J and Merck over the past three years. Historically how have their drug launches impacted revenue growth?", answer: [('ticker', 'JNJ'), ('ticker', 'MRK'), ('from_date', '2021-09-30'), ('to_date', '2024-06-30')]
+    query: "what's amzn's revenue growth during 2023 versus its comps", answer: [('ticker', 'AMZN'), ('from_date', '2023-01-01'), ('to_date', '2023-12-31')]
+    query: "How has apple’s gross margins trended compared to Intel and Microsoft’s over the past 3 years?",answer: [('ticker', 'AAPL'), ('ticker', 'INTC'), ('ticker', 'MSFT'), ('from_date', '2021-09-30'), ('to_date', '2024-06-30')]
+    query: "How many times did aapl discuss artificial intelligence in their most recent 10K or 10Q?", answer: [('ticker', 'AAPL'), ('from_date', '2024-06-30')]
+    """
+
+    prompt = """
+    query: {question}
+    """
+
+    response = openai_client.beta.chat.completions.parse(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt.format(question=question)}
+        ],   
+    )
+
+    try:
+        content = json.loads(response.to_json())["choices"][0]["message"]["content"]
+        if "json" in content:
+            entities = ast.literal_eval(content[content.find("```json\n")+len("```json\n"):len(content)-3])
+        else:
+            entities = ast.literal_eval(content)    
+
+        if debug:
+            with open(DEBUG_ABS_FILE_PATH, "a") as f:
+                f.write(json.dumps({"function": "extract_entities_from_user_query", "inputs": [question], "outputs": [{"entities": entities}]}, indent=6))
+        return entities
+    except Exception as e:
+        print(f"Error inside extract_entities_from_user_query: {e}")
+        return []
 
 
 def perform_quantitative_vector_search(question, results, debug=False):
@@ -3357,29 +3415,49 @@ def perform_quantitative_vector_search(question, results, debug=False):
     # NOTE: BELOW IS THE CASE WHERE perform_quantitative_vector_search IS CALLED FIRST! (THEREFORE CHECK FOR GET_FINANCIALS (BY TICKER) IN RESULTS ABOVE)
     try:    
         entities = extract_entities_from_user_query(question, debug)
+        filters = []
         # import pdb; pdb.set_trace()
         now = (datetime.now() + timedelta(days=-1)).date()
         to_date = f"{now.year}-{now.month}-{now.day}"
-        tickers = []
+        from_date = None
+        ticker = None
         for entity in entities:
             if entity["entity"] == "from_date":
-                from_date = entity["value"]
+                filters.append(entity)
             elif entity["entity"] == "to_date":
                 to_date = entity["value"]
+                filters.append(entity)
             elif entity["entity"] == "ticker":
-                tickers.append(entity["value"].upper())
+                ticker = entity["value"].upper()
+                entity["value"] = ticker
+                filters.append(entity)
 
         # import pdb; pdb.set_trace()
-        
-        ticker = tickers[0]
-        graphql_query = text_to_graphql(question, entities, debug)
-        response = run_graphql_query_against_weaviate_instance(graphql_query)
+        graphql_query = text_to_graphql(question, filters, debug)
+        response, succeeded = run_graphql_query_against_weaviate_instance(graphql_query)
+        if not succeeded:
+            print(f"[FAILED] run_graphql_query_against_weaviate_instance")
+            results["Context"].append(
+                {
+                    "Failed to retrieve records for quantiative vector search for the user query: {question}"
+                }
+            )
+            return results
         
 
         qual_and_quant_df = pd.DataFrame(response["data"]['Get'])
 
         if len(qual_and_quant_df) > 0:
+            # import pdb; pdb.set_trace()
             qual_and_quant_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+            qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True)
+            qual_and_quant_df["temp_date_sort_key"] =  pd.to_datetime(qual_and_quant_df["report_date"])
+            qual_and_quant_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+            # qual_and_quant_df.sort_values(by="report_date", ascending=False, inplace=True)
+            qual_and_quant_df.drop("temp_date_sort_key", axis=1, inplace=True)
+            qual_and_quant_df.rename({"filing_url": "url"}, axis=1, inplace=True)
+            qual_and_quant_df.reset_index(drop=True, inplace=True)
+
             if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
             
             if if_should_do_calculate_for_qual_and_quant:
@@ -3391,7 +3469,7 @@ def perform_quantitative_vector_search(question, results, debug=False):
             # qual_and_quant_df.sort_index(inplace=True, ascending=False)
 
             
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             results["Context"].append(
                 f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
             )
@@ -3402,31 +3480,23 @@ def perform_quantitative_vector_search(question, results, debug=False):
             citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
 
 
-            qual_and_quant_df.drop_duplicates(subset=['filing_url', 'page_number'], inplace=True)
+            
             df_citations_frontend = pd.DataFrame.from_records(citations)
-            df_citations_frontend.drop_duplicates(subset=['url', 'page_number'], inplace=True)
-            df_citations_frontend.reset_index(drop=True, inplace=True)
             citations = df_citations_frontend.to_dict(orient='records')
 
             df_citations = pd.DataFrame.from_records(citations_for_backend)
-            df_citations.drop_duplicates(subset=['url', 'page_number'], inplace=True)
+            # df_citations.drop_duplicates(subset=['url', 'page_number'], inplace=True)
 
-            import pdb; pdb.set_trace()            
+            # import pdb; pdb.set_trace()            
             # citations = add_highlighting_to_citations_pdfs(citations[:10])
             
             if "citations" not in results["finalAnalysis"]:
                 results["finalAnalysis"]["citations"] = []    
-            results["finalAnalysis"]["citations"].extend([citations])
+            results["finalAnalysis"]["citations"].extend(citations)
 
             if "insights" not in results["finalAnalysis"]:
                 results["finalAnalysis"]["insights"] = [] 
 
-            
-            df_citations["temp_date_sort_key"] =  pd.to_datetime(df_citations["report_date"])
-            df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
-            df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
-            df_citations.reset_index(drop=True, inplace=True)
-            print(f"df_citations:\n{df_citations.head()}")
             if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
                 company_financials_df = results['GetCompanyFinancials'][ticker]
                 
@@ -3446,7 +3516,7 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 qual_and_quant_df = qual_and_quant_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
 
                 # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
-                import pdb; pdb.set_trace()
+                
                 # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
                 results['QualAndQuant'][ticker.upper()] = qual_and_quant_df
                 del results['GetCompanyFinancials'][ticker.upper()]
@@ -3456,7 +3526,7 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 return results
 
             else:
-                results["QualAndQuant"][ticker.upper()] = df_citations
+                results["QualAndQuant"][ticker.upper()] = qual_and_quant_df
                 
                 # citations = add_highlighting_to_citations_pdfs(citations[:10])
 
@@ -3482,13 +3552,154 @@ def perform_quantitative_vector_search(question, results, debug=False):
         else:
             results["Context"].append(
                 f"Response to Query (retrieved no results): {question} \n\n{response}"
-            ) 
-
+            )
         
         return results
     except Exception as e:
         print(f"Error inside perform_quantitative_vector_search: {e}")
         return results
+
+
+    
+
+
+# def perform_quantitative_vector_search(question, results, debug=False):
+    
+#     # NOTE: BELOW IS THE CASE WHERE perform_quantitative_vector_search IS CALLED FIRST! (THEREFORE CHECK FOR GET_FINANCIALS (BY TICKER) IN RESULTS ABOVE)
+#     try:    
+#         entities = extract_entities_from_user_query(question, debug)
+#         # import pdb; pdb.set_trace()
+#         now = (datetime.now() + timedelta(days=-1)).date()
+#         to_date = f"{now.year}-{now.month}-{now.day}"
+#         tickers = []
+#         for entity in entities:
+#             if entity["entity"] == "from_date":
+#                 from_date = entity["value"]
+#             elif entity["entity"] == "to_date":
+#                 to_date = entity["value"]
+#             elif entity["entity"] == "ticker":
+#                 tickers.append(entity["value"].upper())
+
+#         # import pdb; pdb.set_trace()
+        
+#         ticker = tickers[0]
+#         graphql_query = text_to_graphql(question, entities, debug)
+#         response = run_graphql_query_against_weaviate_instance(graphql_query)
+        
+
+#         qual_and_quant_df = pd.DataFrame(response["data"]['Get'])
+
+#         if len(qual_and_quant_df) > 0:
+#             qual_and_quant_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+#             if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
+            
+#             if if_should_do_calculate_for_qual_and_quant:
+#                 qual_and_quant_df = do_calculate_for_qual_and_quant(question, qual_and_quant_df)
+            
+#             if "text" in qual_and_quant_df.columns:
+#                 qual_and_quant_df.drop(columns=["text"], inplace=True)
+#             # qual_and_quant_df.set_index("report_date", inplace=True)
+#             # qual_and_quant_df.sort_index(inplace=True, ascending=False)
+
+            
+#             # import pdb; pdb.set_trace()
+#             results["Context"].append(
+#                 f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
+#             )
+
+#             # citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in results["data"]["Get"]["Dow30_10K_10Q"]]
+#             citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+#             citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+#             citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+
+
+#             qual_and_quant_df.drop_duplicates(subset=['filing_url', 'page_number'], inplace=True)
+#             df_citations_frontend = pd.DataFrame.from_records(citations)
+#             df_citations_frontend.drop_duplicates(subset=['url', 'page_number'], inplace=True)
+#             df_citations_frontend.reset_index(drop=True, inplace=True)
+#             citations = df_citations_frontend.to_dict(orient='records')
+
+#             df_citations = pd.DataFrame.from_records(citations_for_backend)
+#             df_citations.drop_duplicates(subset=['url', 'page_number'], inplace=True)
+
+#             # import pdb; pdb.set_trace()            
+#             # citations = add_highlighting_to_citations_pdfs(citations[:10])
+            
+#             if "citations" not in results["finalAnalysis"]:
+#                 results["finalAnalysis"]["citations"] = []    
+#             results["finalAnalysis"]["citations"].extend([citations])
+
+#             if "insights" not in results["finalAnalysis"]:
+#                 results["finalAnalysis"]["insights"] = [] 
+
+            
+#             df_citations["temp_date_sort_key"] =  pd.to_datetime(df_citations["report_date"])
+#             df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+#             df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+#             df_citations.reset_index(drop=True, inplace=True)
+#             print(f"df_citations:\n{df_citations.head()}")
+#             if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
+#                 company_financials_df = results['GetCompanyFinancials'][ticker]
+                
+#                 merge_key = None
+#                 if 'Q' in company_financials_df['report_date'][0]:
+#                     merge_key = 'Calendar Date'
+#                 else:
+#                     merge_key = f'report_date'
+
+#                 qual_and_quant_df.rename({'report_date': merge_key}, axis=1, inplace=True)
+#                 qual_and_quant_df[merge_key] = pd.to_datetime(qual_and_quant_df[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+#                 qual_and_quant_df["temp_date_sort_key"] = pd.to_datetime(qual_and_quant_df[merge_key])
+#                 qual_and_quant_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+#                 qual_and_quant_df.drop("temp_date_sort_key", axis=1, inplace=True)
+#                 qual_and_quant_df.reset_index(drop=True, inplace=True)
+
+#                 qual_and_quant_df = qual_and_quant_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+
+#                 # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
+                
+#                 # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
+#                 results['QualAndQuant'][ticker.upper()] = qual_and_quant_df
+#                 del results['GetCompanyFinancials'][ticker.upper()]
+
+#                 results["finalAnalysis"]["citations"].extend(citations)
+#                 results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
+#                 return results
+
+#             else:
+#                 results["QualAndQuant"][ticker.upper()] = df_citations
+                
+#                 # citations = add_highlighting_to_citations_pdfs(citations[:10])
+
+#                 results["finalAnalysis"]["citations"].extend(citations)
+
+                
+#                 # NOTE: fix the ticker to get from the entities
+#                 # ticker  = [e for e in entities if e["entity"] == "ticker"][0]["value"]
+#                 results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
+#                 # results["finalAnalysis"]["tables"]["MSFT"]= qual_and_quant_df
+                
+#                 response = '\n\n'.join([c["text"] for c in citations])
+#                 results["Context"].append(
+#                     f"Response to Query: {question} \n\n{response}"
+#                 ) 
+#                 # print(f"results from vector search: {results}")
+#                 return results
+
+#             if debug:
+#                 with open(DEBUG_ABS_FILE_PATH, "a") as f:
+#                     f.write(json.dumps({"function": "perform_quantitative_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
+        
+#         else:
+#             results["Context"].append(
+#                 f"Response to Query (retrieved no results): {question} \n\n{response}"
+#             ) 
+
+        
+#         return results
+#     except Exception as e:
+#         print(f"Error inside perform_quantitative_vector_search: {e}")
+#         return results
     
 
 
@@ -3547,8 +3758,12 @@ def perform_vector_search(question, results, debug=False):
             )
             return results
 
+        # import pdb; pdb.set_trace()
+
         citations = [{"text": t["text"], "id": "", "logo": t["logo"], "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
         citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+        if len(citations_for_backend) == 0:
+            return results
         citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
         df_citations_frontend = pd.DataFrame.from_records(citations)
         df_citations_frontend.drop_duplicates(subset=['title', 'page_number'], inplace=True)
@@ -3558,18 +3773,18 @@ def perform_vector_search(question, results, debug=False):
         df_citations = pd.DataFrame.from_records(citations_for_backend)
         df_citations.drop_duplicates(subset=['title', 'page_number'], inplace=True)
 
-        # import pdb; pdb.set_trace()
+       
         
         # citations = add_highlighting_to_citations_pdfs(citations[:10])
         
         if "citations" not in results["finalAnalysis"]:
             results["finalAnalysis"]["citations"] = []    
-        results["finalAnalysis"]["citations"].extend([citations])
+        results["finalAnalysis"]["citations"].extend(citations)
 
         if "insights" not in results["finalAnalysis"]:
             results["finalAnalysis"]["insights"] = [] 
 
-        
+        # import pdb; pdb.set_trace()
         df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations["report_date"])
         df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
         df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
@@ -3595,7 +3810,7 @@ def perform_vector_search(question, results, debug=False):
             df_citations = df_citations.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
 
             # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
-            import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
             # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
             results['VectorSearch'][ticker.upper()] = df_citations
             del results['GetCompanyFinancials'][ticker.upper()]
@@ -3901,6 +4116,7 @@ def get_stock_financials(ticker, mode='calendar', limit=5, debug=False):
     return result_df.T
 
 
+
 def should_do_calculate_for_qual_and_quant(question, debug=False):
     system_prompt = """ 
     You are a tool used to guide a RAG system. Your job is to determine where a calculator function needs to be called or not.
@@ -3910,6 +4126,7 @@ def should_do_calculate_for_qual_and_quant(question, debug=False):
     Below are some examples of user query, json data, and response triplets.
 
     Examples:
+    user query: "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", answer: "False"
     user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
     user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
     user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
@@ -4230,6 +4447,7 @@ def get_final_analysis(query, results, debug=False):
             results = merge_charts(results)
         # if "tables" in results["finalAnalysis"]:
         #     results = merge_tables(results)
+        del results["finalAnalysis"]["charts"]
         results = merge_frames(results)
 
         if "workbookData" not in results["finalAnalysis"]:

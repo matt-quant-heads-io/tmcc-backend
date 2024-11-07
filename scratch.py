@@ -30,6 +30,12 @@ from langchain.chains.summarize import load_summarize_chain
 from langchain.chat_models import ChatOpenAI
 
 import yfinance as yahooFinance
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from tqdm import tqdm
+import torch as th
+
+SENTIMENT_TOKENIZER = AutoTokenizer.from_pretrained("ProsusAI/finbert")
+SENTIMENT_MODEL = AutoModelForSequenceClassification.from_pretrained("ProsusAI/finbert")
 
 
 load_dotenv()
@@ -472,7 +478,10 @@ def split_companies(query, debug=False):
     try:
         # import pdb; pdb.set_trace()
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
-        processed_queries = ast.literal_eval(response)
+        if "json" in response:
+            processed_queries = ast.literal_eval(response[response.find("```json\n")+len("```json\n"):len(response)-3])
+        else:
+            processed_queries = ast.literal_eval(response)
         # entities = extract_entities_from_user_query(processed_queries, debug)
         # import pdb; pdb.set_trace()
         return processed_queries
@@ -644,6 +653,7 @@ def get_list_of_companies(question, debug=False):
         return competitors
     except Exception as e:
         print(f"Error inside get_list_of_company: {e}")
+        import pdb; pdb.set_trace()
         return []
 
 
@@ -758,6 +768,8 @@ def do_local_calculate(question, financials, debug=False):
         user query: "How has AAPL's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if I bought the stock each time?", data: ['revenue', 'Fiscal Date'], answer: financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
         user query: "What is ADBE's year-over-year change in unadjusted operating income from FY2015 to FY2016 (in units of percents and round to one decimal place)? Give a solution to the question by using the income statement.", data: ['operatingIncome', 'Calendar Date'], answer: "financials['operating_income_yoy_change'] = financials['operatingIncome'].pct_change(periods=-4).round(3).mul(100)"
         user query: "How much has MSFT spent on research and development as a percentage of R&D for each of the past 5 years? And what products have been launched in that time frame and what has been their contribution to revenue?", data: ['researchAndDevelopmentExpenses', 'revenue', 'Fiscal Date'], answer: "financials['research_and_development_pct'] = financials['researchAndDevelopmentExpenses'] / financials['revenue']"    
+        user query: "Calculate AAPL’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['totalCurrentAssets', 'inventory', 'revenue', 'netIncome', 'costOfRevenue', 'Calendar Date', 'report_date'], answer: "financials['profit_margin'] = financials['netIncome'] / financials['revenue']; financials['inventory_ratio'] = financials['inventory'] / financials['revenue']; financials['correlation'] = financials['profit_margin'].corr(financials['inventory_ratio']);"
+        user query: Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the correlation to revenue growth, data: ['revenue', 'Fiscal Date', 'report_date'], answer: "financials['revenue_growth'] = financials['revenue'].pct_change(periods=-1).round(2).dropna()"
         """
 
         prompt = """
@@ -774,10 +786,11 @@ def do_local_calculate(question, financials, debug=False):
         )
 
         new_response = json.loads(response.to_json())["choices"][0]["message"]["content"]
+        if new_response.startswith('```'):
+            new_response = new_response.replace('```', '"')
 
-        print(f"'user query': {question}")
-        print(f"'data': {list(financials.columns)}")
-        print(f"'answer': {new_response}")
+        print(f"user query: {question}, data: {list(financials.columns)}")
+        print(f"answer: {new_response}")
         # import pdb; pdb.set_trace()
 
         exec(new_response)
@@ -857,6 +870,37 @@ def get_research_plan(question, debug=False):
     Use the JSON as shown in the below examples when producing your response. Your response should be a valid JSON object.
 
     Task Breakdown Examples:
+
+    {
+        "query": "Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "run_backtest",
+                "description": "Perform a backtest und the supplied parameters",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
     {
         "query": "Run a backtest on CSCO, buying shares every time they mention macro concerns in their filings.",
         "tasks": [
@@ -1682,14 +1726,7 @@ def extract_entities_from_user_query(question, debug=False):
     )
 
     try:
-        
-        # if "json" in response["choices"][0].message.parsed:
-        #     trimmed_response = json.loads(response.to_json())["choices"][0]["message"]["content"][response["choices"][0].message.parsed.index("json") + 4: len(response["choices"][0].message.parsed) - 3]
-        #     entities = json.loads(trimmed_response)
-        # else:
-        #     entities = ast.literal_eval(response["choices"][0].message.parsed)
-        
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         content = json.loads(response.to_json())["choices"][0]["message"]["content"]
         if "json" in content:
             entities = ast.literal_eval(content[content.find("```json\n")+len("```json\n"):len(content)-3])
@@ -1801,18 +1838,21 @@ def do_calculate_for_get_market_data(question, df_market_data):
         
         Given a user query and the supplied json that represents the pandas DataFrame, return the equation to apply to the DataFrame that performs the calculation
         necessary to answer the question. Below are some examples of user query, json data, and response triplets. Assume that the pandas DataFrame is called 'df_market_data'.
-        Use the name df_market_data to represent that pandas DataFrame in your response. 
+        Use the name df_market_data to represent that pandas DataFrame in your response. The 'data' field contains the list of starting columns in the provided dataframe 'df_market_data'.
+        Also, it is important to note that 'df_market_data' is order in terms of most recent dates first. Take this into account when calculating row-wise metrics such as price change etc. (see the examples below).
 
         Examples:
         'user query': "Compare F's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         'user query': "Compare TSLA's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         'user query': "Compare F's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         'user query': "Compare TSLA's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"        
-        'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=-20)[::-1].cumsum()[::-1].round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).cumsum().round(2);" 
-        'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=-20)[::-1].cumsum()[::-1].round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).cumsum().round(2);"
+        'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=20).round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).round(2);" 
+        'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=20).round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).round(2);"
         'user query': "How has apple’s stock performed post 2021 in the following quarters after management has referenced macro concerns?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         'user query': How many times since 2020 has MSFT mentioned global macro concerns? Would I have made money if I bought the stock at these times, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)
-       
+        'user query': "Calculate AAPL’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", 'data': ['Calendar Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=20).round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).round(2)"
+        'user query': "Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance", 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Price Performance'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], df_market_data['Price Performance'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)
         """
 
         prompt = """
@@ -1831,11 +1871,9 @@ def do_calculate_for_get_market_data(question, df_market_data):
 
         new_response = json.loads(response.to_json())["choices"][0]["message"]["content"]
 
-        print(f"'user query': {question}")
-        print(f"'data': {list(df_market_data.columns)}")
+        print(f"'user query': {question}, 'data': {list(df_market_data.columns)}")
         print(f"'answer': {new_response}")
-        # import pdb; pdb.set_trace()
-        
+        # import pdb; pdb.set_trace();
 
         exec(new_response)
 
@@ -2497,7 +2535,7 @@ def get_stock_financials_old(symbol, mode='calendar', limit=5, debug=False):
 
             # import pdb; pdb.set_trace()
 
-            return result_df.T
+            return result_df
         except Exception as e:
             print(f"Error in get_stock_financials: {e}")
             
@@ -2666,10 +2704,12 @@ def get_relevant_rows(financials, question, debug=False):
         print(f"'avalailable rows': {financials}")
         print(f"'correctly selected rows': {relevant_rows}")
         # import pdb; pdb.set_trace()
+        if len(relevant_rows) == 0:
+            import pdb; pdb.set_trace()
 
         return relevant_rows
     except Exception as e:
-        print(f"Error parsing ChatGPT response: {e}")
+        print(f"Error get_relevant_rows: {e}")
         return []
 
 
@@ -2975,7 +3015,7 @@ def text_to_graphql(question, entities, debug=False):
     system_prompt = """Generate a GraphQL query for a Weaviate backend database that retrieves 10Q and 10K company financials filings based on specified filters, a user-provided question, and the specified collection.
     When applying filing_type filter if you see '10-Q' in the Question map it to '10Q'. Likewise, when you see '10-K' in the Question map it to '10K'. In other words, do not include the hyphen for the 'filing_type' filter.
     Also next include the graphql keyword 'limit' in your response since we do not want to limit the number of retrieved documents arbitrarily. If the question contains both '10-K' and '10-Q' then DO NOT use the 'filing_type'
-    as a filter in your graphql response.
+    as a filter in your graphql response. Do not include any column references in your response that are not included in the Input Details section below (even if they may make logical sense in the question).
 
     # Input Details
     - **Collection**
@@ -3002,6 +3042,8 @@ def text_to_graphql(question, entities, debug=False):
     - The output should be a GraphQL query string formatted to fetch data from the Weaviate database using the specified filters and question context. Ensure correct syntax and structure of the GraphQL query.
 
     # Examples
+
+
 
     **Example Input**: 
     Question: "how many times did aapl mention macro demand concerns in their filings since 2023?"
@@ -3257,21 +3299,22 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         Use the name qual_and_quant_df to represent that pandas DataFrame in your response. 
 
         Examples:
-        'user query': "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], answer: ""qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))""
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
-        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'page_number', 'report_date', 'url', 'text', 'ticker'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], answer: ""qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))""
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did MSFT mention the activision anti-trust case in their filings?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user_query': "Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df.loc[:, 'Total Positive'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment']>0]); qual_and_quant_df.loc[:, 'Total Negative'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment']<0]);"
         """
 
         prompt = """
@@ -3296,7 +3339,7 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         print(f"'user query': {question}")
         print(f"'data': {list(qual_and_quant_df.columns)}")
         print(f"'answer': {new_response}")
-        # import pdb; pdb.set_trace()
+        import pdb; pdb.set_trace()
         if "filing_url" in new_response:
             new_resposne = new_response.replace('filing_url', 'url')
         exec(new_response)
@@ -3407,18 +3450,41 @@ def extract_entities_from_user_query(question, debug=False):
         return entities
     except Exception as e:
         print(f"Error inside extract_entities_from_user_query: {e}")
+        import pdb; pdb.set_trace()
         return []
 
 
+def get_sentiment(df):
+    for i in tqdm(df.index):
+        try:
+            headline = df.loc[i, 'text']
+        except Exception as e:
+            print(f"Error in get_sentiment: {e}")
+            print(' \'text\' column might be missing from dataframe')
+
+        input = SENTIMENT_TOKENIZER(headline, padding = True, truncation = True, return_tensors='pt')
+        # Estimate output
+        output = SENTIMENT_MODEL(**input)
+        # Pass model output logits through a softmax layer.
+        predictions = th.softmax(output.logits, dim=-1)
+        sentiment_index = th.argmax(predictions).item()
+        sentiment_scores = predictions.tolist()[0]
+        if sentiment_scores[0] > sentiment_scores[1]:
+            sentiment_score = predictions[0][0].tolist()
+        else:
+            sentiment_score = (-1)*predictions[0][1].tolist()
+
+        df.loc[i, 'Sentiment'] = sentiment_score
+
+    return df
+
+
 def perform_quantitative_vector_search(question, results, debug=False):
-    
-    # NOTE: BELOW IS THE CASE WHERE perform_quantitative_vector_search IS CALLED FIRST! (THEREFORE CHECK FOR GET_FINANCIALS (BY TICKER) IN RESULTS ABOVE)
     try:    
         entities = extract_entities_from_user_query(question, debug)
         filters = []
-        # import pdb; pdb.set_trace()
-        now = (datetime.now() + timedelta(days=-1)).date()
-        to_date = f"{now.year}-{now.month}-{now.day}"
+
+        to_date = None
         from_date = None
         ticker = None
         for entity in entities:
@@ -3432,7 +3498,6 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 entity["value"] = ticker
                 filters.append(entity)
 
-        # import pdb; pdb.set_trace()
         graphql_query = text_to_graphql(question, filters, debug)
         response, succeeded = run_graphql_query_against_weaviate_instance(graphql_query)
         if not succeeded:
@@ -3444,51 +3509,38 @@ def perform_quantitative_vector_search(question, results, debug=False):
             )
             return results
         
-
         qual_and_quant_df = pd.DataFrame(response["data"]['Get'])
-
         if len(qual_and_quant_df) > 0:
-            # import pdb; pdb.set_trace()
             qual_and_quant_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
             qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True)
             qual_and_quant_df["temp_date_sort_key"] =  pd.to_datetime(qual_and_quant_df["report_date"])
             qual_and_quant_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
-            # qual_and_quant_df.sort_values(by="report_date", ascending=False, inplace=True)
             qual_and_quant_df.drop("temp_date_sort_key", axis=1, inplace=True)
             qual_and_quant_df.rename({"filing_url": "url"}, axis=1, inplace=True)
             qual_and_quant_df.reset_index(drop=True, inplace=True)
+
+            qual_and_quant_df = get_sentiment(qual_and_quant_df)
+            print(f"qual_and_quant_df:\n{qual_and_quant_df.head()}\n\n")
 
             if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
             
             if if_should_do_calculate_for_qual_and_quant:
                 qual_and_quant_df = do_calculate_for_qual_and_quant(question, qual_and_quant_df)
             
-            if "text" in qual_and_quant_df.columns:
-                qual_and_quant_df.drop(columns=["text"], inplace=True)
-            # qual_and_quant_df.set_index("report_date", inplace=True)
-            # qual_and_quant_df.sort_index(inplace=True, ascending=False)
+            # if "text" in qual_and_quant_df.columns:
+            #     qual_and_quant_df.drop(columns=["text"], inplace=True)
 
-            
-            # import pdb; pdb.set_trace()
             results["Context"].append(
                 f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
             )
-
-            # citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in results["data"]["Get"]["Dow30_10K_10Q"]]
+            
             citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
             citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
             citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
-
-
-            
             df_citations_frontend = pd.DataFrame.from_records(citations)
             citations = df_citations_frontend.to_dict(orient='records')
 
             df_citations = pd.DataFrame.from_records(citations_for_backend)
-            # df_citations.drop_duplicates(subset=['url', 'page_number'], inplace=True)
-
-            # import pdb; pdb.set_trace()            
-            # citations = add_highlighting_to_citations_pdfs(citations[:10])
             
             if "citations" not in results["finalAnalysis"]:
                 results["finalAnalysis"]["citations"] = []    
@@ -3514,10 +3566,6 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 qual_and_quant_df.reset_index(drop=True, inplace=True)
 
                 qual_and_quant_df = qual_and_quant_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
-
-                # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
-                
-                # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
                 results['QualAndQuant'][ticker.upper()] = qual_and_quant_df
                 del results['GetCompanyFinancials'][ticker.upper()]
 
@@ -3526,23 +3574,14 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 return results
 
             else:
-                results["QualAndQuant"][ticker.upper()] = qual_and_quant_df
-                
-                # citations = add_highlighting_to_citations_pdfs(citations[:10])
-
+                results["QualAndQuant"][ticker.upper()] = df_citations
                 results["finalAnalysis"]["citations"].extend(citations)
-
-                
-                # NOTE: fix the ticker to get from the entities
-                # ticker  = [e for e in entities if e["entity"] == "ticker"][0]["value"]
                 results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
-                # results["finalAnalysis"]["tables"]["MSFT"]= qual_and_quant_df
                 
                 response = '\n\n'.join([c["text"] for c in citations])
                 results["Context"].append(
                     f"Response to Query: {question} \n\n{response}"
                 ) 
-                # print(f"results from vector search: {results}")
                 return results
 
             if debug:
@@ -3702,35 +3741,29 @@ def perform_quantitative_vector_search(question, results, debug=False):
 #         return results
     
 
-
 def perform_vector_search(question, results, debug=False):
-    # import pdb; pdb.set_trace()
     try:
         entities = extract_entities_from_user_query(question, debug)
-        ticker = None
         filters = []
-        for ent in entities:
-            if ent["entity"] == "ticker":
-                ticker = ent["value"]
-                filters.append({
-                    "path": ["ticker"],
-                    "operator": "Equal",
-                    "valueText": ticker.upper()
-                })
-            elif ent["entity"] == "from_date":
-                filters.append({
-                    "path": ["report_date"],
-                    "operator": "GreaterThanEqual",
-                    "valueDate": f'{str(parser.parse(ent["value"])).split(" ")[0]}T00:00:00.00Z'
-                })
-            elif ent["entity"] == "to_date":
-                filters.append({
-                    "path": ["report_date"],
-                    "operator": "LessThanEqual",
-                    "valueDate": f'{str(parser.parse(ent["value"])).split(" ")[0]}T00:00:00.00Z'
-                })
+        to_date = None
+        from_date = None
+        ticker = None
+        for entity in entities:
+            if entity["entity"] == "from_date":
+                filters.append(
+                    {"path": ["report_date"], "operator": "GreaterThanEqual", "valueDate": f'{entity["value"]}T00:00:00.00Z'}
+                )
+            elif entity["entity"] == "to_date":
+                to_date = entity["value"]
+                filters.append(
+                    {"path": ["report_date"], "operator": "LessThanEqual", "valueDate": f'{entity["value"]}T00:00:00.00Z'}
+                )
+            elif entity["entity"] == "ticker":
+                ticker = entity["value"].upper()
+                filters.append(
+                    {"path": ["ticker"], "operator": "Equal", "valueText": ticker}
+                )
                 
-
         response = (
             weaviate_client.query
             .get("Dow30_10K_10Q", ["filing_type", "logo", "company_name", "ticker", "accession_number", "filing_url", "text", "page_number", "report_date"])
@@ -3745,98 +3778,367 @@ def perform_vector_search(question, results, debug=False):
             .do()
         )
 
-        if "finalAnalysis" not in results:
-            results["finalAnalysis"] = {
-
-            }
-
-        # import pdb; pdb.set_trace()
-
-        if 'errors' in response:
+        if "data" not in response:
+            print(f"[FAILED] to get response for weaviate query in perform_vector_search")
             results["Context"].append(
                 f"I failed to retrieve documents from my vector search for the query: {question}"
             )
             return results
 
-        # import pdb; pdb.set_trace()
+        results_df = pd.DataFrame(response["data"]['Get'])
+        if len(results_df) > 0:
+            results_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+            if len(results_df) == 0:
+                print(f"[WARNING] Vector search retrieved 0 records!")
+                return results_df
 
-        citations = [{"text": t["text"], "id": "", "logo": t["logo"], "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
-        citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
-        if len(citations_for_backend) == 0:
-            return results
-        citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
-        df_citations_frontend = pd.DataFrame.from_records(citations)
-        df_citations_frontend.drop_duplicates(subset=['title', 'page_number'], inplace=True)
-        df_citations_frontend.reset_index(drop=True, inplace=True)
-        citations = df_citations_frontend.to_dict(orient='records')
-
-        df_citations = pd.DataFrame.from_records(citations_for_backend)
-        df_citations.drop_duplicates(subset=['title', 'page_number'], inplace=True)
-
-       
-        
-        # citations = add_highlighting_to_citations_pdfs(citations[:10])
-        
-        if "citations" not in results["finalAnalysis"]:
-            results["finalAnalysis"]["citations"] = []    
-        results["finalAnalysis"]["citations"].extend(citations)
-
-        if "insights" not in results["finalAnalysis"]:
-            results["finalAnalysis"]["insights"] = [] 
-
-        # import pdb; pdb.set_trace()
-        df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations["report_date"])
-        df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
-        df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
-        df_citations.reset_index(drop=True, inplace=True)
-        print(f"df_citations:\n{df_citations.head()}")
-        
-        if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
-            company_financials_df = results['GetCompanyFinancials'][ticker]
+            results_df['importance'] = results_df['_additional'].apply(lambda x: 1.0 - x['distance'])
+            results_df.drop("_additional", axis=1, inplace=True)
+            results_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True)
+            results_df["temp_date_sort_key"] =  pd.to_datetime(results_df["report_date"])
+            results_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+            results_df.drop("temp_date_sort_key", axis=1, inplace=True)
+            results_df.rename({"filing_url": "url"}, axis=1, inplace=True)
+            results_df.reset_index(drop=True, inplace=True)
             
-            merge_key = None
-            if 'Q' in company_financials_df['report_date'][0]:
-                merge_key = 'Calendar Date'
-            else:
-                merge_key = f'report_date'
-
-            df_citations.rename({'report_date': merge_key}, axis=1, inplace=True)
-            df_citations[merge_key] = pd.to_datetime(df_citations[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
-            df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations[merge_key])
-            df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
-            df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
-            df_citations.reset_index(drop=True, inplace=True)
-
-            df_citations = df_citations.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
-
-            # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
-            # import pdb; pdb.set_trace()
-            # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
-            results['VectorSearch'][ticker.upper()] = df_citations
-            del results['GetCompanyFinancials'][ticker.upper()]
-
+            results["Context"].append(
+                f"Database results for query (ticker={ticker}): {question} \n\n{results_df.to_json()}"
+            )
+            citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+            citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+            citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+            
+            df_citations_frontend = pd.DataFrame.from_records(citations)
+            citations = df_citations_frontend.to_dict(orient='records')
+            df_citations = pd.DataFrame.from_records(citations_for_backend)
+            
+            if "citations" not in results["finalAnalysis"]:
+                results["finalAnalysis"]["citations"] = []    
             results["finalAnalysis"]["citations"].extend(citations)
-            results["finalAnalysis"]["tables"][ticker.upper()] = df_citations
-            return results
+
+            if "insights" not in results["finalAnalysis"]:
+                results["finalAnalysis"]["insights"] = [] 
+
+            if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
+                company_financials_df = results['GetCompanyFinancials'][ticker]
+                
+                merge_key = None
+                if 'Q' in company_financials_df['report_date'][0]:
+                    merge_key = 'Calendar Date'
+                else:
+                    merge_key = f'report_date'
+
+                results_df.rename({'report_date': merge_key}, axis=1, inplace=True)
+                results_df[merge_key] = pd.to_datetime(results_df[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+                results_df["temp_date_sort_key"] = pd.to_datetime(results_df[merge_key])
+                results_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+                results_df.drop("temp_date_sort_key", axis=1, inplace=True)
+                results_df.reset_index(drop=True, inplace=True)
+
+                results_df = results_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+                results['VectorSearch'][ticker.upper()] = results_df
+                del results['GetCompanyFinancials'][ticker.upper()]
+
+                results["finalAnalysis"]["citations"].extend(citations)
+                results["finalAnalysis"]["tables"][ticker.upper()] = results_df
+                return results
+            else:
+                results["VectorSearch"][ticker.upper()] = results_df
+                results["finalAnalysis"]["citations"].extend(citations)
+                results["finalAnalysis"]["tables"][ticker.upper()] = results_df
+                
+                response = '\n\n'.join([c["text"] for c in citations])
+                results["Context"].append(
+                    f"Response to Query: {question} \n\n{response}"
+                ) 
+
+                return results
+
+            if debug:
+                with open(DEBUG_ABS_FILE_PATH, "a") as f:
+                    f.write(json.dumps({"function": "perform_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
         
         else:
-            results["VectorSearch"][ticker.upper()] = df_citations
-            
-            
-            response = '\n\n'.join([c["text"] for c in citations])
             results["Context"].append(
-                f"Response to Query: {question} \n\n{response}"
-            ) 
-            # print(f"results from vector search: {results}")
-            return results
-
-        if debug:
-            with open(DEBUG_ABS_FILE_PATH, "a") as f:
-                f.write(json.dumps({"function": "perform_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
+                f"Response to Query (retrieved no results): {question} \n\n{response}"
+            )
+        
         return results
     except Exception as e:
         print(f"Error inside perform_vector_search: {e}")
         return results
+
+# def perform_vector_search(question, results, debug=False):
+#     try:
+#         entities = extract_entities_from_user_query(question, debug)
+#         filters = []
+#         to_date = None
+#         from_date = None
+#         ticker = None
+#         for entity in entities:
+#             if entity["entity"] == "from_date":
+#                 filters.append(entity)
+#             elif entity["entity"] == "to_date":
+#                 to_date = entity["value"]
+#                 filters.append(entity)
+#             elif entity["entity"] == "ticker":
+#                 ticker = entity["value"].upper()
+#                 entity["value"] = ticker
+#                 filters.append(entity)
+
+#         import pdb; pdb.set_trace()
+                
+#         response = (
+#             weaviate_client.query
+#             .get("Dow30_10K_10Q", ["filing_type", "logo", "company_name", "ticker", "accession_number", "filing_url", "text", "page_number", "report_date"])
+#             .with_near_text({
+#                 "concepts": [question]
+#             })
+#             .with_where({
+#                 "operator": "And",
+#                 "operands": filters
+#             })
+#             .with_additional(["distance"])
+#             .do()
+#         )
+
+#         if response.status_code != 200:
+#             print(f"[FAILED] to get response for weaviate query in perform_vector_search")
+#             results["Context"].append(
+#                 f"I failed to retrieve documents from my vector search for the query: {question}"
+#             )
+#             return results
+
+#         results_df = pd.DataFrame(response["data"]['Get'])
+
+#         if len(qual_and_quant_df) > 0:
+#             results_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+#             results_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True)
+#             results_df["temp_date_sort_key"] =  pd.to_datetime(results_df["report_date"])
+#             results_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+#             results_df.drop("temp_date_sort_key", axis=1, inplace=True)
+#             results_df.rename({"filing_url": "url"}, axis=1, inplace=True)
+#             results_df.reset_index(drop=True, inplace=True)
+
+#             if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
+            
+#             if if_should_do_calculate_for_qual_and_quant:
+#                 results_df = do_calculate_for_qual_and_quant(question, results_df)
+            
+#             if "text" in qual_and_quant_df.columns:
+#                 results_df.drop(columns=["text"], inplace=True)
+#             # qual_and_quant_df.set_index("report_date", inplace=True)
+#             # qual_and_quant_df.sort_index(inplace=True, ascending=False)
+
+            
+#             # import pdb; pdb.set_trace()
+#             results["Context"].append(
+#                 f"Database results for query (ticker={ticker}): {question} \n\n{results_df.to_json()}"
+#             )
+
+#             # citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in results["data"]["Get"]["Dow30_10K_10Q"]]
+#             citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+#             citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+#             citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+
+
+            
+#             df_citations_frontend = pd.DataFrame.from_records(citations)
+#             citations = df_citations_frontend.to_dict(orient='records')
+
+#             df_citations = pd.DataFrame.from_records(citations_for_backend)
+#             # df_citations.drop_duplicates(subset=['url', 'page_number'], inplace=True)
+
+#             # import pdb; pdb.set_trace()            
+#             # citations = add_highlighting_to_citations_pdfs(citations[:10])
+            
+#             if "citations" not in results["finalAnalysis"]:
+#                 results["finalAnalysis"]["citations"] = []    
+#             results["finalAnalysis"]["citations"].extend(citations)
+
+#             if "insights" not in results["finalAnalysis"]:
+#                 results["finalAnalysis"]["insights"] = [] 
+
+#             if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
+#                 company_financials_df = results['GetCompanyFinancials'][ticker]
+                
+#                 merge_key = None
+#                 if 'Q' in company_financials_df['report_date'][0]:
+#                     merge_key = 'Calendar Date'
+#                 else:
+#                     merge_key = f'report_date'
+
+#                 results_df.rename({'report_date': merge_key}, axis=1, inplace=True)
+#                 results_df[merge_key] = pd.to_datetime(results_df[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+#                 results_df["temp_date_sort_key"] = pd.to_datetime(results_df[merge_key])
+#                 results_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+#                 results_df.drop("temp_date_sort_key", axis=1, inplace=True)
+#                 results_df.reset_index(drop=True, inplace=True)
+
+#                 results_df = results_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+
+#                 results['VectorSearch'][ticker.upper()] = results_df
+#                 del results['GetCompanyFinancials'][ticker.upper()]
+
+#                 results["finalAnalysis"]["citations"].extend(citations)
+#                 results["finalAnalysis"]["tables"][ticker.upper()] = results_df
+#                 return results
+
+#             else:
+#                 results["VectorSearch"][ticker.upper()] = results_df
+                
+#                 # citations = add_highlighting_to_citations_pdfs(citations[:10])
+
+#                 results["finalAnalysis"]["citations"].extend(citations)
+
+                
+#                 # NOTE: fix the ticker to get from the entities
+#                 # ticker  = [e for e in entities if e["entity"] == "ticker"][0]["value"]
+#                 results["finalAnalysis"]["tables"][ticker.upper()] = results_df
+#                 # results["finalAnalysis"]["tables"]["MSFT"]= qual_and_quant_df
+                
+#                 response = '\n\n'.join([c["text"] for c in citations])
+#                 results["Context"].append(
+#                     f"Response to Query: {question} \n\n{response}"
+#                 ) 
+#                 # print(f"results from vector search: {results}")
+#                 return results
+
+#             if debug:
+#                 with open(DEBUG_ABS_FILE_PATH, "a") as f:
+#                     f.write(json.dumps({"function": "perform_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
+        
+#         else:
+#             results["Context"].append(
+#                 f"Response to Query (retrieved no results): {question} \n\n{response}"
+#             )
+        
+#         return results
+#     except Exception as e:
+#         print(f"Error inside perform_vector_search: {e}")
+#         return results
+
+
+# def perform_vector_search(question, results, debug=False):
+#     # import pdb; pdb.set_trace()
+#     try:
+#         entities = extract_entities_from_user_query(question, debug)
+#         filters = []
+#         # now = (datetime.now() + timedelta(days=-1)).date()
+#         to_date = None
+#         from_date = None
+#         ticker = None
+#         for entity in entities:
+#             if entity["entity"] == "from_date":
+#                 filters.append(entity)
+#             elif entity["entity"] == "to_date":
+#                 to_date = entity["value"]
+#                 filters.append(entity)
+#             elif entity["entity"] == "ticker":
+#                 ticker = entity["value"].upper()
+#                 entity["value"] = ticker
+#                 filters.append(entity)
+                
+#         response = (
+#             weaviate_client.query
+#             .get("Dow30_10K_10Q", ["filing_type", "logo", "company_name", "ticker", "accession_number", "filing_url", "text", "page_number", "report_date"])
+#             .with_near_text({
+#                 "concepts": [question]
+#             })
+#             .with_where({
+#                 "operator": "And",
+#                 "operands": filters
+#             })
+#             .with_additional(["distance"])
+#             .do()
+#         )
+
+#         if response.status_code != 200:
+#             print(f"[FAILED] to get response for weaviate query in perform_vector_search")
+#             results["Context"].append(
+#                 f"I failed to retrieve documents from my vector search for the query: {question}"
+#             )
+#             return results
+
+#         results_df = pd.DataFrame(response["data"]['Get'])
+
+#         citations = [{"text": t["text"], "id": "", "logo": t["logo"], "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+#         citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0 - float(t["_additional"]["distance"])} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
+#         if len(citations_for_backend) == 0:
+#             return results
+#         citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+#         df_citations_frontend = pd.DataFrame.from_records(citations)
+#         df_citations_frontend.drop_duplicates(subset=['title', 'page_number'], inplace=True)
+#         df_citations_frontend.reset_index(drop=True, inplace=True)
+#         citations = df_citations_frontend.to_dict(orient='records')
+
+#         df_citations = pd.DataFrame.from_records(citations_for_backend)
+#         df_citations.drop_duplicates(subset=['title', 'page_number'], inplace=True)
+
+       
+        
+#         # citations = add_highlighting_to_citations_pdfs(citations[:10])
+        
+#         if "citations" not in results["finalAnalysis"]:
+#             results["finalAnalysis"]["citations"] = []    
+#         results["finalAnalysis"]["citations"].extend(citations)
+
+#         if "insights" not in results["finalAnalysis"]:
+#             results["finalAnalysis"]["insights"] = [] 
+
+#         # import pdb; pdb.set_trace()
+#         df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations["report_date"])
+#         df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+#         df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+#         df_citations.reset_index(drop=True, inplace=True)
+#         print(f"df_citations:\n{df_citations.head()}")
+        
+#         if len(results['GetCompanyFinancials']) > 0 and ticker.upper() in results['GetCompanyFinancials']:
+#             company_financials_df = results['GetCompanyFinancials'][ticker]
+            
+#             merge_key = None
+#             if 'Q' in company_financials_df['report_date'][0]:
+#                 merge_key = 'Calendar Date'
+#             else:
+#                 merge_key = f'report_date'
+
+#             df_citations.rename({'report_date': merge_key}, axis=1, inplace=True)
+#             df_citations[merge_key] = pd.to_datetime(df_citations[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+#             df_citations["temp_date_sort_key"] = pd.to_datetime(df_citations[merge_key])
+#             df_citations.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+#             df_citations.drop("temp_date_sort_key", axis=1, inplace=True)
+#             df_citations.reset_index(drop=True, inplace=True)
+
+#             df_citations = df_citations.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+
+#             # qual_and_quant_df, company_financials_df = realign_qual_and_quant_df_to_closest_dt_from_upstream_df(qual_and_quant_df, company_financials_df, merge_key)
+#             # import pdb; pdb.set_trace()
+#             # company_financials_df = company_financials_df.merge(qual_and_quant_df, left_on=merge_key, right_on=merge_key)
+#             results['VectorSearch'][ticker.upper()] = df_citations
+#             del results['GetCompanyFinancials'][ticker.upper()]
+
+#             results["finalAnalysis"]["citations"].extend(citations)
+#             results["finalAnalysis"]["tables"][ticker.upper()] = df_citations
+#             return results
+        
+#         else:
+#             results["VectorSearch"][ticker.upper()] = df_citations
+            
+            
+#             response = '\n\n'.join([c["text"] for c in citations])
+#             results["Context"].append(
+#                 f"Response to Query: {question} \n\n{response}"
+#             ) 
+#             # print(f"results from vector search: {results}")
+#             return results
+
+#         if debug:
+#             with open(DEBUG_ABS_FILE_PATH, "a") as f:
+#                 f.write(json.dumps({"function": "perform_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
+#         return results
+#     except Exception as e:
+#         print(f"Error inside perform_vector_search: {e}")
+#         return results
 
 # def perform_vector_search(question, results, debug=False):
 #     entities = extract_entities_from_user_query(question, debug)
@@ -4113,7 +4415,7 @@ def get_stock_financials(ticker, mode='calendar', limit=5, debug=False):
 
     
     result_df.drop(['symbol', 'calendarYear', 'reportedCurrency', 'cik', 'fillingDate', 'acceptedDate', 'period'], axis=1, inplace=True)
-    return result_df.T
+    return result_df
 
 
 
@@ -4169,112 +4471,147 @@ def should_do_calculate_for_qual_and_quant(question, debug=False):
         return False
 
 
+# def get_financials(question, results, debug=False):
+#     try:
+#         entities = extract_entities_from_user_query(question, debug)
+#         ticker = None
+#         for ent in entities:
+#             if ent["entity"] == "ticker":
+#                 ticker = ent["value"]
+#                 break
+
+#         fiscal_or_calendar = get_fiscal_or_calendar_by_user_query(question)
+#         financials = get_stock_financials(ticker.upper(), mode=fiscal_or_calendar)
+#         if financials is None or len(financials) == 0:
+#             print(f"[ERROR] Empty financials df retrieved from get_stock_financials!")
+#             return results
+
+#         temp_financials = financials.copy()
+#         temp_financials.reset_index(inplace=True)
+#         if "Q" in temp_financials['report_date'][0] or "FY" in temp_financials['report_date'][0]:
+#             sort_key = "Calendar Date"
+#         else:
+#             sort_key = "report_date"
+
+
+#         temp_financials["temp_sort_key"] = pd.to_datetime(temp_financials[sort_key])
+#         temp_financials.sort_values(by=["temp_sort_key"], ascending=True)
+#         temp_financials.drop("temp_sort_key", axis=1, inplace=True)
+        
+#         # import pdb; pdb.set_trace()
+#         financial_field_columns = [c for c in temp_financials.columns if c not in ['Calendar Date', 'Fiscal Date', 'report_date']]
+#         report_date_values = list(temp_financials['report_date'].values)
+#         relevant_rows = get_relevant_rows(financial_field_columns, question)
+#         relevant_rows = list(set([r for r in relevant_rows if r in  financial_field_columns]))
+
+#         if "Q" in temp_financials['report_date'][0] or "FY" in temp_financials['report_date'][0]:
+#             other_date_column_to_keep = "Calendar Date"
+#             relevant_columns = get_relevant_fiscal_columns(report_date_values, question)
+#             relevant_columns = [c for c in relevant_columns if c in report_date_values]
+#             relevant_columns = list(set(relevant_columns))
+#         else:
+#             other_date_column_to_keep = "Fiscal Date"
+#             relevant_columns = get_relevant_calendar_columns(report_date_values, question)
+#             relevant_columns = [c for c in relevant_columns if c in report_date_values]
+#             relevant_columns = list(set(relevant_columns))
+        
+#         temp_financials = temp_financials[temp_financials['report_date'].isin(relevant_columns)][relevant_rows + [other_date_column_to_keep, "report_date"]]
+#         calculation_required = should_local_calculate(question, financial_field_columns)
+#         print(f"calculation_required: {calculation_required}")
+#         called_calc = False
+#         if calculation_required:
+#             temp_financials = do_local_calculate(question, temp_financials)
+#             print(f"temp_financials after do_local_calculate: {temp_financials}")
+#             if len(temp_financials) == 0:
+#                 print(f"[ERROR] Got back Empty temp_financials df from do_local_calculate!")
+#                 return results
+
+#         temp_financials.reset_index(drop=True,inplace=True)
+#         temp_financials['Company'] = [ticker.upper()]*len(temp_financials)
+#         # temp_financials.reset_index(drop=True, inplace=True)
+#         # temp_financials.set_index(pd.RangeIndex(len(temp_financials)), inplace=True)
+#         results["GetCompanyFinancials"][ticker.upper()] = temp_financials
+#         chart_data = temp_financials.to_json()
+
+#         results["Context"].append(
+#             f"{temp_financials.T.columns[0]} results for {ticker.upper()}: {temp_financials.to_json()}"
+#         )
+
+#         return results
+#     except Exception as e:
+#         import pdb; pdb.set_trace()
+#         print(f"Error inside get_financials: {e}")
+#         return results
+
 def get_financials(question, results, debug=False):
     try:
         entities = extract_entities_from_user_query(question, debug)
-        tickers = []
+        ticker = None
         for ent in entities:
             if ent["entity"] == "ticker":
-                tickers.append(ent["value"])
+                ticker = ent["value"]
+                break
 
         fiscal_or_calendar = get_fiscal_or_calendar_by_user_query(question)
+        financials = get_stock_financials(ticker.upper(), mode=fiscal_or_calendar)
+        if financials is None or len(financials) == 0:
+            print(f"[ERROR] Empty financials df retrieved from get_stock_financials!")
+            return results
+
+        temp_financials = financials.copy()
+        temp_financials.reset_index(inplace=True)
+        if "Q" in temp_financials['report_date'][0] or "FY" in temp_financials['report_date'][0]:
+            sort_key = "Calendar Date"
+        else:
+            sort_key = "report_date"
+
+
+        temp_financials["temp_sort_key"] = pd.to_datetime(temp_financials[sort_key])
+        temp_financials.sort_values(by=["temp_sort_key"], ascending=True)
+        temp_financials.drop("temp_sort_key", axis=1, inplace=True)
+        
+        
         # import pdb; pdb.set_trace()
-        for ticker in tickers:
-            if "processed_tickers" not in results:
-                results["processed_tickers"] = []
+        financial_field_columns = [c for c in temp_financials.columns if c not in ['Calendar Date', 'Fiscal Date', 'report_date']]
+        report_date_values = list(temp_financials['report_date'].values)
+        relevant_rows = get_relevant_rows(financial_field_columns, question)
+        relevant_rows = list(set([r for r in relevant_rows if r in  financial_field_columns]))
 
-            if ticker.upper() in results["processed_tickers"]:
-                continue
-            financials = get_stock_financials(ticker.upper(), mode=fiscal_or_calendar)
-            # financials_old = get_stock_financials_old(ticker.upper(), mode=fiscal_or_calendar)
-            # import pdb; pdb.set_trace()
-            if financials is None or len(financials) == 0:
-                continue
-            temp_financials = financials.copy()
-            relevant_rows = get_relevant_rows(list(temp_financials.index.values), question)
-            print(f"relevant_rows: {relevant_rows}")
-            
-            if fiscal_or_calendar == "fiscal":
-                other_date_column_to_keep = "Calendar Date"
-                relevant_columns = get_relevant_fiscal_columns(list(temp_financials.columns), question)
-            elif fiscal_or_calendar == "calendar":
-                other_date_column_to_keep = "Fiscal Date"
-                relevant_columns = get_relevant_calendar_columns(list(temp_financials.columns), question)
-            else:
-                print(f"[WARNING] get_fiscal_or_calendar_by_user_query return {fiscal_or_calendar}")
-                other_date_column_to_keep = "Calendar Date"
-                relevant_columns = get_relevant_fiscal_columns(list(temp_financials.columns), question)
+        if "Q" in temp_financials['report_date'][0] or "FY" in temp_financials['report_date'][0]:
+            other_date_column_to_keep = "Calendar Date"
+            relevant_columns = get_relevant_fiscal_columns(report_date_values, question)
+            relevant_columns = [c for c in relevant_columns if c in report_date_values]
+            relevant_columns = list(set(relevant_columns))
+        else:
+            other_date_column_to_keep = "Fiscal Date"
+            relevant_columns = get_relevant_calendar_columns(report_date_values, question)
+            relevant_columns = [c for c in relevant_columns if c in report_date_values]
+            relevant_columns = list(set(relevant_columns))
+        
+        temp_financials = temp_financials[temp_financials['report_date'].isin(relevant_columns)][relevant_rows + [other_date_column_to_keep, "report_date"]]
 
+        calculation_required = should_local_calculate(question, financial_field_columns)
+        print(f"calculation_required: {calculation_required}")
+        called_calc = False
+        if calculation_required:
+            temp_financials = do_local_calculate(question, temp_financials)
+            print(f"temp_financials after do_local_calculate: {temp_financials}")
+            if len(temp_financials) == 0:
+                print(f"[ERROR] Got back Empty temp_financials df from do_local_calculate!")
+                return results
 
-            print(f"relevant_columns: {relevant_columns}")
+        temp_financials.reset_index(drop=True,inplace=True)
+        temp_financials['Company'] = [ticker.upper()]*len(temp_financials)
+        results["GetCompanyFinancials"][ticker.upper()] = temp_financials
+        chart_data = temp_financials.to_json()
 
-            
-            filtered_columns = []
-            filtered_rows = []
-            for col in relevant_columns:
-                if col in temp_financials.columns:
-                    filtered_columns.append(col)
+        results["Context"].append(
+            f"{temp_financials.T.columns[0]} results for {ticker.upper()}: {temp_financials.to_json()}"
+        )
 
-            for row in relevant_rows:
-                if row in temp_financials.index.values:
-                    filtered_rows.append(row)
-
-            
-            temp_financials = temp_financials.loc[filtered_rows+[other_date_column_to_keep], filtered_columns]
-            # import pdb; pdb.set_trace()
-            # temp_financials = temp_financials.dropna()
-            # import pdb; pdb.set_trace()
-
-            calculation_required = should_local_calculate(question, list(financials.index.values))
-            print(f"calculation_required: {calculation_required}")
-            called_calc = False
-            if calculation_required:
-                temp_financials = do_local_calculate(question, temp_financials.T)
-                if "report_date" not in temp_financials.columns:
-                    temp_financials = temp_financials.T
-                print(f"temp_financials after do_local_calculate: {temp_financials}")
-                if len(temp_financials) == 0:
-                    continue
-
-            # import pdb; pdb.set_trace()
-            temp_financials = temp_financials.T
-            temp_financials['Company'] = [ticker.upper()]*len(temp_financials)
-
-            # temp_financials = temp_financials.dropna()
-            # temp_financials = temp_financials.rename(columns={c: f"{ticker.upper()}.{c}" for c in temp_financials.columns})
-            temp_financials.reset_index(inplace=True)
-            temp_financials.set_index(pd.RangeIndex(len(temp_financials)), inplace=True)
-            results["GetCompanyFinancials"][ticker.upper()] = temp_financials
-            # chart_data = temp_financials.to_dict('records')
-            chart_data = temp_financials.to_json()
-
-            results["Context"].append(
-                f"{temp_financials.T.columns[0]} results for {ticker.upper()}: {temp_financials.to_json()}"
-            )
-
-            # results["GetCompanyFinancials"][ticker.upper()] = temp_financials
-            # results["processed_tickers"].append(ticker.upper())
-
-            # # temp_financials[f"Date_{ticker}"] = temp_financials.T.index.values
-            # table =  {
-            #         "headers": list(temp_financials.T.columns),
-            #         "rows": temp_financials.T.values.tolist()
-            # }
-
-            # results["finalAnalysis"]["charts"][ticker.upper()] = temp_financials
-            # results["finalAnalysis"]["tables"][ticker.upper()]= temp_financials
-            # if "workbookData" not in results:
-            #     results["workbookData"] = {
-            #     }
-
-            # # import pdb; pdb.set_trace()
-            # results["workbookData"][ticker.upper()] = table
-
-        if debug:
-            with open(DEBUG_ABS_FILE_PATH, "a") as f:
-                f.write(json.dumps({"function": "get_financials", "inputs": [question], "outputs": [{"financials": temp_financials.to_json()}]}, indent=6))
         return results
     except Exception as e:
+        # import pdb; pdb.set_trace()
         print(f"Error inside get_financials: {e}")
         return results
 

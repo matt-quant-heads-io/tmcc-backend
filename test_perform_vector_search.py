@@ -35,12 +35,6 @@ from langchain.chat_models import ChatOpenAI
 
 from scratch import determine_query_pattern, get_list_of_companies, map_list_of_companies_and_query_to_list_of_queries, map_competitors_and_query_to_list_of_queries, split_companies, preprocess_user_query, openai_client, cohere_client, weaviate_client, merge_charts, merge_frames, do_global_calculate
 import yfinance as yahooFinance
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from tqdm import tqdm
-import torch as th
-
-SENTIMENT_TOKENIZER = AutoTokenizer.from_pretrained("ProsusAI/finbert")
-SENTIMENT_MODEL = AutoModelForSequenceClassification.from_pretrained("ProsusAI/finbert")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
@@ -549,6 +543,10 @@ def should_do_calculate_for_qual_and_quant(question, debug=False):
     )
 
     try:
+        
+        import pdb 
+        # pdb.set_trace()
+        # print(f"financials inside should_local_calculate: {financials.to_json()}")
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
         calculation_required = ast.literal_eval(response)
         if debug:
@@ -561,92 +559,76 @@ def should_do_calculate_for_qual_and_quant(question, debug=False):
         print(f"Error inside should_do_calculate_for_qual_and_quant: {e}")
         return False
 
-def get_sentiment(df):
-    for i in tqdm(df.index):
-        try:
-            headline = df.loc[i, 'text']
-        except Exception as e:
-            print(f"Error in get_sentiment: {e}")
-            print(' \'text\' column might be missing from dataframe')
 
-        input = SENTIMENT_TOKENIZER(headline, padding = True, truncation = True, return_tensors='pt')
-        # Estimate output
-        output = SENTIMENT_MODEL(**input)
-        # Pass model output logits through a softmax layer.
-        predictions = th.softmax(output.logits, dim=-1)
-        sentiment_index = th.argmax(predictions).item()
-        sentiment_scores = predictions.tolist()[0]
-        if sentiment_scores[0] > sentiment_scores[1]:
-            sentiment_score = predictions[0][0].tolist()
-        else:
-            sentiment_score = (-1)*predictions[0][1].tolist()
-
-        df.loc[i, 'Sentiment'] = sentiment_score
-
-    return df
-
-
-def perform_quantitative_vector_search(question, results, debug=False):
-    try:    
+def perform_vector_search(question, results, debug=False):
+    try:
         entities = extract_entities_from_user_query(question, debug)
         filters = []
-
         to_date = None
         from_date = None
         ticker = None
         for entity in entities:
             if entity["entity"] == "from_date":
-                filters.append(entity)
+                filters.append(
+                    {"path": ["report_date"], "operator": "GreaterThanEqual", "valueDate": f'{entity["value"]}T00:00:00.00Z'}
+                )
             elif entity["entity"] == "to_date":
                 to_date = entity["value"]
-                filters.append(entity)
+                filters.append(
+                    {"path": ["report_date"], "operator": "LessThanEqual", "valueDate": f'{entity["value"]}T00:00:00.00Z'}
+                )
             elif entity["entity"] == "ticker":
                 ticker = entity["value"].upper()
-                entity["value"] = ticker
-                filters.append(entity)
+                filters.append(
+                    {"path": ["ticker"], "operator": "Equal", "valueText": ticker}
+                )
+                
+        response = (
+            weaviate_client.query
+            .get("Dow30_10K_10Q", ["filing_type", "logo", "company_name", "ticker", "accession_number", "filing_url", "text", "page_number", "report_date"])
+            .with_near_text({
+                "concepts": [question]
+            })
+            .with_where({
+                "operator": "And",
+                "operands": filters
+            })
+            .with_additional(["distance"])
+            .do()
+        )
 
-        graphql_query = text_to_graphql(question, filters, debug)
-        response, succeeded = run_graphql_query_against_weaviate_instance(graphql_query)
-        if not succeeded:
-            print(f"[FAILED] run_graphql_query_against_weaviate_instance")
+        if "data" not in response:
+            print(f"[FAILED] to get response for weaviate query in perform_vector_search")
             results["Context"].append(
-                {
-                    "Failed to retrieve records for quantiative vector search for the user query: {question}"
-                }
+                f"I failed to retrieve documents from my vector search for the query: {question}"
             )
             return results
-        
-        qual_and_quant_df = pd.DataFrame(response["data"]['Get'])
-        if len(qual_and_quant_df) > 0:
-            qual_and_quant_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
-            qual_and_quant_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True)
-            qual_and_quant_df["temp_date_sort_key"] =  pd.to_datetime(qual_and_quant_df["report_date"])
-            qual_and_quant_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
-            qual_and_quant_df.drop("temp_date_sort_key", axis=1, inplace=True)
-            qual_and_quant_df.rename({"filing_url": "url"}, axis=1, inplace=True)
-            qual_and_quant_df.reset_index(drop=True, inplace=True)
 
-            qual_and_quant_df = get_sentiment(qual_and_quant_df)
-            print(f"qual_and_quant_df:\n{qual_and_quant_df.head()}\n\n")
+        results_df = pd.DataFrame(response["data"]['Get'])
+        if len(results_df) > 0:
+            results_df = pd.DataFrame(response["data"]['Get']["Dow30_10K_10Q"])
+            if len(results_df) == 0:
+                print(f"[WARNING] Vector search retrieved 0 records!")
+                return results_df
 
-            if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
+            results_df['importance'] = results_df['_additional'].apply(lambda x: 1.0 - x['distance'])
+            results_df.drop("_additional", axis=1, inplace=True)
+            results_df.drop_duplicates(subset=['accession_number', 'page_number'], inplace=True)
+            results_df["temp_date_sort_key"] =  pd.to_datetime(results_df["report_date"])
+            results_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+            results_df.drop("temp_date_sort_key", axis=1, inplace=True)
+            results_df.rename({"filing_url": "url"}, axis=1, inplace=True)
+            results_df.reset_index(drop=True, inplace=True)
             
-            if if_should_do_calculate_for_qual_and_quant:
-                qual_and_quant_df = do_calculate_for_qual_and_quant(question, qual_and_quant_df)
-            
-            # if "text" in qual_and_quant_df.columns:
-            #     qual_and_quant_df.drop(columns=["text"], inplace=True)
-
             results["Context"].append(
-                f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
+                f"Database results for query (ticker={ticker}): {question} \n\n{results_df.to_json()}"
             )
-            
             citations = [{"text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
             citations_for_backend = [{"report_date": f'{t["report_date"].split("T")[0]}', "text": t["text"], "id": "", "logo": "", "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
             citations = sorted(citations, key=lambda d: d['importance'], reverse=True)
+            
             df_citations_frontend = pd.DataFrame.from_records(citations)
             citations = df_citations_frontend.to_dict(orient='records')
-
             df_citations = pd.DataFrame.from_records(citations_for_backend)
             
             if "citations" not in results["finalAnalysis"]:
@@ -665,35 +647,36 @@ def perform_quantitative_vector_search(question, results, debug=False):
                 else:
                     merge_key = f'report_date'
 
-                qual_and_quant_df.rename({'report_date': merge_key}, axis=1, inplace=True)
-                qual_and_quant_df[merge_key] = pd.to_datetime(qual_and_quant_df[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
-                qual_and_quant_df["temp_date_sort_key"] = pd.to_datetime(qual_and_quant_df[merge_key])
-                qual_and_quant_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
-                qual_and_quant_df.drop("temp_date_sort_key", axis=1, inplace=True)
-                qual_and_quant_df.reset_index(drop=True, inplace=True)
+                results_df.rename({'report_date': merge_key}, axis=1, inplace=True)
+                results_df[merge_key] = pd.to_datetime(results_df[merge_key].str[:10]).dt.strftime('%Y-%m-%d')
+                results_df["temp_date_sort_key"] = pd.to_datetime(results_df[merge_key])
+                results_df.sort_values(by=["temp_date_sort_key"], ascending=False, inplace=True)
+                results_df.drop("temp_date_sort_key", axis=1, inplace=True)
+                results_df.reset_index(drop=True, inplace=True)
 
-                qual_and_quant_df = qual_and_quant_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
-                results['QualAndQuant'][ticker.upper()] = qual_and_quant_df
+                results_df = results_df.merge(company_financials_df, left_on=merge_key, right_on=merge_key)
+
+                results['VectorSearch'][ticker.upper()] = results_df
                 del results['GetCompanyFinancials'][ticker.upper()]
 
                 results["finalAnalysis"]["citations"].extend(citations)
-                results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
+                results["finalAnalysis"]["tables"][ticker.upper()] = results_df
                 return results
-
             else:
-                results["QualAndQuant"][ticker.upper()] = df_citations
+                results["VectorSearch"][ticker.upper()] = results_df
                 results["finalAnalysis"]["citations"].extend(citations)
-                results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
+                results["finalAnalysis"]["tables"][ticker.upper()] = results_df
                 
                 response = '\n\n'.join([c["text"] for c in citations])
                 results["Context"].append(
                     f"Response to Query: {question} \n\n{response}"
                 ) 
+
                 return results
 
             if debug:
                 with open(DEBUG_ABS_FILE_PATH, "a") as f:
-                    f.write(json.dumps({"function": "perform_quantitative_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
+                    f.write(json.dumps({"function": "perform_vector_search", "inputs": [question], "outputs": [{"response": response}]}, indent=6))
         
         else:
             results["Context"].append(
@@ -702,8 +685,9 @@ def perform_quantitative_vector_search(question, results, debug=False):
         
         return results
     except Exception as e:
-        print(f"Error inside perform_quantitative_vector_search: {e}")
+        print(f"Error inside perform_vector_search: {e}")
         return results
+
 
 
 def get_final_analysis(query, results, debug=False):
@@ -778,10 +762,10 @@ def get_final_analysis(query, results, debug=False):
         print(f"Error parsing ChatGPT response: {e}")
         return results
 
-quant_vector_search_answers = []
+vector_search_answers = []
 queries = [
-    "Identify sections discussing 'supply chain disruptions' in the latest 10-Q filings for Apple (AAPL), Boeing (BA), and Home Depot (HD). Summarize the potential impacts on their operations.",
-    "Count the number of times 'non-GAAP financial measures' are mentioned in the last three years of 10-K filings for all technology companies in the Dow 30, including Microsoft (MSFT), Intel (INTC), and IBM.",
+    "How have AAPL, BA, and Home Depot (HD) dealt with supply chain constraints? What strategies have they implemented?",
+    "What's the status of aapl's anti-trust cases since 2022?",
     "Analyze the sentiment of the forward-looking statements in the latest 10-K filings for JPMorgan Chase (JPM) and Goldman Sachs (GS). Identify whether the tone is predominantly positive, negative, or neutral.",
     "Compare the discussion of 'revenue growth strategies' in 10-K and 10-Q filings from 2018 to 2023 for Coca-Cola (KO) and PepsiCo (PEP). How have these strategies evolved over time?",
     "Search for mentions of 'inflation' and 'interest rates' in 10-Q filings for consumer goods companies like Walmart (WMT) and McDonald's (MCD) from Q1 2022 to Q2 2023. What concerns or strategies are reported in relation to these economic indicators?"
@@ -789,20 +773,20 @@ queries = [
 for query in queries:
     results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "MarketDataForBacktest": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "VectorSearch": {}, "Tables": {}}
     processed_queries = process_queries(query)
-    # import pdb; pdb.set_trace()
     for processed_query in processed_queries:
-        results = perform_quantitative_vector_search(processed_query, results, debug=False)
+        results = perform_vector_search(processed_query, results, debug=False)
 
-    quant_vector_search_answers.append({
+    # import pdb; pdb.set_trace()
+    vector_search_answers.append({
         "OriginalQuery": query,
         "ProcessedQueries": processed_queries,
-        "Results": {k:v.to_dict(orient="records") for k,v in results['QualAndQuant'].items()}
+        "Results": {k:v.to_dict(orient="records") for k,v in results['VectorSearch'].items()}
     })
     results = {"Query": query, "Context": [], "Execution": {}, "finalAnalysis": {"tables": {}, "charts": {}}, "MarketData": {}, "MarketDataForBacktest": {}, "QualAndQuant": {}, "GetNews": {}, "GetCompanyFinancials": {}, "GetEstimates": {}, "RunBackTest": {}, "VectorSearch": {}, "Tables": {}}
 
 
 
 
-with open("/home/ubuntu/tmcc-backend/batch_queries_test_quant_vector_search.json", "w") as f:
-    f.write(json.dumps(quant_vector_search_answers))
+with open("/home/ubuntu/tmcc-backend/batch_queries_test_vector_search.json", "w") as f:
+    f.write(json.dumps(vector_search_answers))
     

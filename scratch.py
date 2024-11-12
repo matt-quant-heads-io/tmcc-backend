@@ -82,8 +82,8 @@ openai_client = OpenAI(
 cohere_client = cohere.Client(api_key=cohere_api_key)
 auth_config = weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY)
 
-weaviate_client = client = weaviate.Client(
-  url="https://meyofexrqzye9frlt6ugg.c0.us-east1.gcp.weaviate.cloud",
+weaviate_client = weaviate.Client(
+  url=WEAVIATE_URL,
   auth_client_secret=auth_config,
   additional_headers = {
         "X-OpenAI-Api-Key": OPENAI_API_KEY  # Replace with your inference API key
@@ -446,6 +446,14 @@ def split_companies(query, debug=False):
     ONLY and each query string in the list should only contain one company or ticker. Below are some examples.
 
     Examples:
+    query: "How many times has MSFT referenced the Indian market since 2021? What percentage of their references are positive versus negative? Chart the losses due to currency fluctuations over this period. Compare this to AAPL", answer: ["How many times has MSFT referenced the Indian market since 2021? What percentage of their references are positive versus negative? Chart the losses due to currency fluctuations over this period.", "How many times has AAPL referenced the Indian market since 2021? What percentage of their references are positive versus negative? Chart the losses due to currency fluctuations over this period."]
+    query: "How many times has AAPL referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references. Compare these findings for MSFT", answer: ["How many times has AAPL referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references.", "How many times has MSFT referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references."]
+    query: "Of Coca-cola, McDonald's, and CAT, which company has referenced negative impacts from the Russian invasion of Ukraine and Russian sanctions the most since the invasion began in 2022?", answer: ["How many times has KO mentioned the Russian invasion of Ukraine and Russian sanctions since the invasion began in 2022? What percentage were negative?", "How many times has MCD mentioned the Russian invasion of Ukraine and Russian sanctions since the invasion began in 2022? What percentage were negative?", "How many times has CAT mentioned the Russian invasion of Ukraine and Russian sanctions since the invasion began in 2022? What percentage were negative?" ]
+    query: "Chart out the annual revenue growth and R&D costs of Amgen and J&J over the last 5 years, then calculate the correlation for these two", asnwer: ["Chart out the annual revenue growth and R&D costs of AMGN over the last 5 years", "Chart out the annual revenue growth and R&D costs of JNJ over the last 5 years"]
+    query: "Compare the gross margin of AAPL, MSFT, and AMZN. Also chart out what is the y/y change for each", answer: ["What's the gross margin for AAPL? Chart out the change", "What's the gross margin for MSFT? Chart out the change", "What's the gross margin for AMZN? Chart out the change"]
+    query: "How have AMEX and Visa talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it", answer: ["How has AXP talked about macro demand in their filings over the past 3 years.", "How has V talked about macro demand in their filings over the past 3 years."]
+    query: "For every filing in which aapl mentions macro concerns, calculate apple’s inventory ratio from 2022 to 2024. What's the correlation and r-squared between these metrics? How do these metrics stack up against MSFT and Tesla’s?", answer: ["For every filing in which aapl mentions macro concerns, calculate their inventory ratio from 2022 to 2024. What's the correlation and r-squared between these metrics?", "For every filing in which MSFT mentions macro concerns, calculate their inventory ratio from 2022 to 2024. What's the correlation and r-squared between these metrics?", "For every filing in which TSLA mentions macro concerns, calculate their inventory ratio from 2022 to 2024. What's the correlation and r-squared between these metrics?"]
+    query: "How have Walmart and Target talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it", answer: ["How has WMT talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it", "How has TGT talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it"]
     query: "how has Ford's revenue trended since 2020? what has been the stock performance over that time period? Compare to TSLA", answer: ["how has F's revenue trended since 2020? what has been the stock performance over that time period?", "how has TSLA's revenue trended since 2020? what has been the stock performance over that time period?"]
     query: "how has Ford's revenue trended since 2020? what has been the stock performance over that time period? Compare to TESLA", answer: ["how has F's revenue trended since 2020? what has been the stock performance over that time period?", "how has TSLA's revenue trended since 2020? what has been the stock performance over that time period?"]
     query: "how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after? compare this to AAPL", answer: ["how many times did CRM mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?", "how many times did AAPL mention macro concerns in their filings since 2023? what has been the stock's performance 60 days after?"]
@@ -875,6 +883,441 @@ def get_research_plan(question, debug=False):
     Use the JSON as shown in the below examples when producing your response. Your response should be a valid JSON object.
 
     Task Breakdown Examples:
+    {
+        "query": "How many times has MSFT referenced the Indian market since 2021? What percentage of their references are positive versus negative? Chart the losses due to currency fluctuations over this period.",
+        "tasks: [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }  
+        
+        ]
+    }
+    {
+        "query": "How have AMEX and Visa talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }  
+        ]
+    }
+    {
+        "query": "How many times has AAPL referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references.",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }  
+        ]
+    }
+    {
+        "query": "How many times has microsoft referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references.",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }  
+        ]
+    }
+    {
+        "query": "What percentage of MCD's references to Russian invasion of Ukraine and Russian sanctions were negative from the the most since the invasion began in 2022?",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            } 
+        ]
+    }
+    {
+        "query": "Has Travelers talked about the increased frequency of natural disasters and it’s impact on their business? Create a chart of their total annual mentions in their filings over the past 3 years",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {    
+        "query": "Has Travelers talked about the increased frequency of natural disasters and it’s impact on their business? If so, how do they talk about it? Has their been a noticeable shift in tonality and frequency in their filings over the past few years?",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "How much would I have made if I had bought apple every time they announced supply chain concerns in their filing? Assume I held it into the next quarter.",
+    `    "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_market_data",
+                "description": "Retrieve market data",
+                "status": "pending
+            },
+            {
+                "task": "run_backtest",
+                "description": "Perform a backtest und the supplied parameters",
+                "status": "pending"
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }`
+    {
+        "query": "For every filing in which tesla mentions macro concerns, calculate their inventory ratio from 2022 to 2024. What's the correlation and r-squared between these metrics?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "For every filing in which aapl mentions macro concerns, calculate their inventory ratio from 2022 to 2024. What's the correlation and r-squared between these metrics?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "what is the correlation between the inventory turnover ratios and gross profit margins for HD between 2018 and 2022?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+`   {
+        "query": "Chart out the annual revenue growth and R&D costs of Amge over the last 5 years, then calculate the correlation for these two",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "Chart out the annual revenue growth and R&D costs of J&J over the last 5 years, then calculate the correlation for these two",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }`
+    {
+        "query": "what is the correlation between the inventory turnover ratios and gross profit margins for TSLA between 2018 and 2022?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+    {
+        "query": "Compare the gross margin of MSFT. Also chart out what is the y/y change for each",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+    {
+        "query": "Compare the gross margin of AMZN. Also chart out what is the y/y change for each",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+    {
+        "query": "Compare the gross margin of AAPL. Also chart out what is the y/y change for each",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+    {
+        "query": "What’s the price impact every time aapl mentions supply chain issues in their filings relative to their average post filing stock move?",
+        "tasks": [
+                {
+                    "task": "perform_quantitative_vector_search",
+                    "description": "Perform computations atop vector search",
+                    "status": "pending
+                },
+                {
+                    "task": "get_market_data",
+                    "description": "Retrieve market data",
+                    "status": "pending
+                },
+                {
+                    "task": "get_final_analysis",
+                    "description": "Mold the information into a final analysis",
+                    "status": "pending"
+                }
+        ]
+    }
+    {
+        "query": "For every filing in which aapl mentions macro concerns, calculate apple’s inventory ratio  from 2022 to 2024. What's the correlation and r-squared between these metrics?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+    {
+        "query": "For every filing in which MSFT mentions macro concerns, calculate the inventory ratio  from 2022 to 2024. What's the correlation and r-squared between these metrics?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+    {
+        "query": "For every filing in which tesla mentions macro concerns, calculate their inventory ratio  from 2022 to 2024. What's the correlation and r-squared between these metrics?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+            
+        ]
+    }
+
+    {
+        "query": "How has AMEX talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "How has Visa talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+    }
+    {
+        "query": "Has Travelers talked about the increased frequency of natural disasters and it’s impact on their business? If so, how do they talk about it? Has their been a noticeable shift in tonality and frequency in their filings over the past few years?",
+        "tasks": [
+            {
+                "task": "perform_quantitative_vector_search",
+                "description": "Perform computations atop vector search",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        ]
+
+    }
+    {
+        "query": "Calculate MSFT's profit margin and inventory ratio according to its 10K’s/Q filings from 2022 to 2024. What's the correlation, r-squared, between these metrics and their respective variances?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        
+        ]
+    
+    }
+    {
+        "query": "Compute AAPL's profit margin and inventory ratio according to its 10K’s/Q filings for 2024. Calculate the correlation, r-squared, between these metrics and their respective variances?",
+        "tasks": [
+            {
+                "task": "get_sec_financials",
+                "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                "status": "pending
+            },
+            {
+                "task": "get_final_analysis",
+                "description": "Mold the information into a final analysis",
+                "status": "pending"
+            }
+        
+        ]
+    
+    }
 
     {
         "query": "Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance",
@@ -1633,6 +2076,23 @@ def get_research_plan(question, debug=False):
                     }
                 ]
         }
+        {
+            "query": "Compute AAPL's profit margin and inventory ratio according to its 10K’s/Q filings for 2024. Calculate the correlation, r-squared, between these metrics and their respective variances?",
+            "tasks": [
+                    {
+                        "task": "get_sec_financials",
+                        "description": "Gather recent financial statements focusing on income statements over the last few quarters or years.",
+                        "status": "pending
+                    },
+                    {
+                        "task": "get_final_analysis",
+                        "description": "Mold the information into a final analysis",
+                        "status": "pending"
+                    }
+            
+            ]
+    
+    }
     """
     prompt = """
         user query: {question}
@@ -1683,6 +2143,7 @@ def extract_entities_from_user_query(question, debug=False):
     query then it should not appear in the output.
 
     ## EXAMPLES
+    query: "Has Travelers talked about the increased frequency of natural disasters and it’s impact on their business? If so, how do they talk about it? Has their been a noticeable shift in tonality and frequency in their filings over the past few years?", answer: [{'entity': 'ticker', 'value': 'TRV'}]
     query: "Does AMCOR have an improving gross margin profile as of FY2023? If gross margin is not a useful metric for a company like this, then state that and explain why.", answer: [('ticker', 'AMCR'), ('to_date', '2023-12-31')]
     query: "Does AMCOR have an improving gross margin profile as of FY2023? If gross margin is not a useful metric for a company like this, then state that and explain why.", answer: [('ticker', 'AMCR'), ('to_date', '2023-12-31')]
     query: "whats the variance between the inventory ratio and return on assets growth for first 3 quarters of 2021?", answer: [('ticker', 'AAPL'), ('from_date', '2021-01-01'), ('to_date', '2021-09-30')]
@@ -1834,8 +2295,76 @@ def extract_entities_from_user_query(question, debug=False):
 #         print(f"Error in get_market_data {e}")
 #         return results
 
+def do_calculate_for_get_market_data_merged_from_get_financials(question, df_market_data, columns_for_calc):
+    try:
+        system_prompt = """ 
+        You are a tool used in a rag system to determine an equation that needs to be applied to a pandas dataframe. Your job is to generate 
+        the string representation of the pandas calculation such that the python eval function can be called on the string.
+        Your response should not contain anything other than the pandas equation to be called. Including anything other than just the equation 
+        will cause the functin to fail. 
+        
+        Given a user query and the supplied json that represents the pandas DataFrame, return the equation to apply to the DataFrame that performs the calculation
+        necessary to answer the question. Below are some examples of user query, json data, and response triplets. Assume that the pandas DataFrame is called 'df_market_data'.
+        Use the name df_market_data to represent that pandas DataFrame in your response. The 'data' field contains the list of starting columns in the provided dataframe 'df_market_data'.
+        Also, it is important to note that 'df_market_data' is order in terms of most recent dates first. Take this into account when calculating row-wise metrics such as price change etc. (see the examples below).
+
+        Examples:
+        'user query': "Calculate WMT's operating income % margin for FY2019 relative to the stock performance over that same period.", 'data': ['Company', 'operating_income_margin', 'report_date', 'revenue', 'Close', '1 QTR', 'Calendar Date', 'operatingIncome'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2); df_market_data['Correlation'] = df_market_data['Stock Returns'].corr(df_market_data['operating_income_margin'])"
+        'user query': "WMT's operating income % margin for FY2019 relative to the stock performance over that time.", 'data': ['Company', 'operating_income_margin', 'report_date', 'revenue', 'Close', '1 QTR', 'Calendar Date', 'operatingIncome'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': "Calculate WMT's operating income % margin for FY2019 relative to the stock performance over that same period.", 'data': ['Company', 'operating_income_margin', 'report_date', 'revenue', 'Close', '1 QTR', 'Calendar Date', 'operatingIncome'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2); df_market_data['Correlation'] = df_market_data['Stock Returns'].corr(df_market_data['operating_income_margin'])"
+        'user query': "Compare F's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': "Compare TSLA's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': "Compare F's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': "Compare TSLA's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"        
+        'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=20).round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).round(2);" 
+        'user query': "Calculate apple’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=20).round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).round(2);"
+        'user query': "How has apple’s stock performed post 2021 in the following quarters after management has referenced macro concerns?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': How many times since 2020 has MSFT mentioned global macro concerns? Would I have made money if I bought the stock at these times, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)
+        'user query': "Calculate AAPL’s profit margin and inventory ratio according to its 10K’s/Q filings. What’s the historical correlation of these values? How has the stock reacted in the month preceding and following earnings when the prior quarter’s correlations were low vs when they were high?", 'data': ['Calendar Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['1 month after'] = df_market_data['Close'].pct_change(periods=20).round(2); df_market_data['1 month prior'] = df_market_data['Close'].pct_change(periods=-20).round(2)"
+        'user query': "Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance", 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Price Performance'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
+        'user query': Of the instances in which AAPL referenced its supply chain, how many were positive versus negative? Show me the revenue growth and the price performance tied to each instance, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], df_market_data['Price Performance'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)
+        """
+
+        prompt = """
+        user query: {question}
+        data: {data_columns}
+        """
+
+        data_columns = list(df_market_data.columns)
+        response = openai_client.beta.chat.completions.parse(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt.format(question=question, data_columns=columns_for_calc)}
+            ],
+        )
+
+        new_response = json.loads(response.to_json())["choices"][0]["message"]["content"]
+
+        print(f"'user query': \"{question}\", 'data': {list(df_market_data.columns)}")
+        print(f", 'answer': \"{new_response}\"")
+
+        exec(new_response)
+
+        if isinstance(df_market_data, pd.Series):
+            df_market_data = df_market_data.to_frame()
+            # new_financials.dropna(inplace=True)
+        elif isinstance(df_market_data, pd.DataFrame):
+            pass
+        else:
+            df_market_data = pd.DataFrame({"result": df_market_data})
+        
+        # import pdb; pdb.set_trace()
+        return df_market_data
+    except Exception as e:
+        print(f"Error inside do_calculate_for_get_market_data: {e}")
+        return df_market_data
 
 
+"""
+        'user query': Calculate WMT's operating income % margin for FY2019 relative to the stock performance over that time., 'data': ['Calendar Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+'answer': df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].round(2)
+"""
 def do_calculate_for_get_market_data(question, df_market_data):
     try:
         system_prompt = """ 
@@ -1850,6 +2379,7 @@ def do_calculate_for_get_market_data(question, df_market_data):
         Also, it is important to note that 'df_market_data' is order in terms of most recent dates first. Take this into account when calculating row-wise metrics such as price change etc. (see the examples below).
 
         Examples:
+        'user query': What’s the price impact every time aapl mentions supply chain issues in their filings relative to their average post filing stock move?, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': df_market_data['Post Filing Move'] = df_market_data['Close'].pct_change(periods=5).round(2)
         'user query': "Compare F's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         'user query': "Compare TSLA's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", 'data': ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
         'user query': "Compare F's revenue growth since 2020 relative to its stock? Which stock has appreciated more and by how much?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], 'answer': "df_market_data['Stock Returns'] = df_market_data['Close'].pct_change(periods=-1)[::-1].cumsum()[::-1].round(2)"
@@ -1927,7 +2457,10 @@ def should_calculate_for_get_market_data(question, df_columns):
         determine wheter a calculation needs to be done or if the available data is sufficient to answer the quesiton already and thus no further calculations
         are requird. Below are some examples of user query, available colummns, and response triplets.
 
-        Examples:    
+        Examples:   
+        user query: "What’s the price impact every time aapl mentions supply chain issues in their filings relative to their average post filing stock move?", data: ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], answer: "True" 
+        user query: "Calculate WMT's operating income % margin for FY2019 relative to the stock performance over that same period.", data: ['Company', 'operating_income_margin', 'report_date', 'revenue', 'Close', '1 QTR', 'Calendar Date', 'operatingIncome'] , answer: "True"
+        user query: "Calculate WMT's operating income % margin for FY2019 relative to the stock performance over that same period.", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], answer: "True"
         user query: "What's TSLA's revenue growth and stock growth since 2020?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], answer: "True"
         user query: "What's F's revenue growth and stock growth since 2020?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], answer: "True"
         user query: "What's TSLA's revenue growth and stock growth since 2020?", data: ['Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits'], answer: "True"
@@ -1936,6 +2469,7 @@ def should_calculate_for_get_market_data(question, df_columns):
         prompt = """
         user query: {question} data: {df_columns}
         """
+        
         response = openai_client.beta.chat.completions.parse(
             model="gpt-4o",
             messages=[
@@ -2200,10 +2734,10 @@ def get_market_data(question, results, debug=False):
                     df[merge_key] = df[merge_key].dt.strftime("%Y-%m-%d")
                     df = df[::-1]
                     all_market_data_columns = list(df.columns)
-                    calculation_required = should_calculate_for_get_market_data(question, all_market_data_columns)
-                    print(f"calculation_required: {calculation_required}")
-                    if calculation_required:
-                        df = do_calculate_for_get_market_data(question, df)
+                    # calculation_required = should_calculate_for_get_market_data(question, all_market_data_columns)
+                    # print(f"calculation_required: {calculation_required}")
+                    # if calculation_required:
+                    #     df = do_calculate_for_get_market_data(question, df)
 
 
                     backtest_df = df.copy()
@@ -2215,15 +2749,28 @@ def get_market_data(question, results, debug=False):
                     backtest_df = backtest_df[[c for c in backtest_df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
                     backtest_company_financials_df = backtest_company_financials_df.merge(backtest_df, left_on=merge_key, right_on=merge_key)
                     backtest_company_financials_df.drop_duplicates(inplace=True)
+                    columns_for_calc = list(set(list(backtest_company_financials_df.columns)))
+                    calculation_required = should_calculate_for_get_market_data(question, columns_for_calc)
+                    print(f"calculation_required: {calculation_required}")
+                    if calculation_required:
+                        backtest_df = do_calculate_for_get_market_data_merged_from_get_financials(question, backtest_company_financials_df, columns_for_calc)
+                    
                     results['MarketDataForBacktest'][ticker.upper()] = backtest_company_financials_df
                         
                     df, company_financials_df = realign_market_df_to_closest_dt_from_upstream_df(df, company_financials_df, merge_key)
                     df = df[[c for c in df.columns if c not in ['Volume', 'Open', 'High', 'Low', 'Dividends', 'Stock Splits']]]
                     company_financials_df = company_financials_df.merge(df, left_on=merge_key, right_on=merge_key)
                     company_financials_df.drop_duplicates(inplace=True)
+                    columns_for_calc = list(set(list(company_financials_df)))
+                    calculation_required = should_calculate_for_get_market_data(question, columns_for_calc)
+                    print(f"calculation_required: {calculation_required}")
+                    if calculation_required:
+                        df = do_calculate_for_get_market_data_merged_from_get_financials(question, company_financials_df, columns_for_calc)
+                     
                     results["Context"].append(
                         {f"{question} (ticker={ticker})" : company_financials_df}
                     )
+                    # import pdb; pdb.set_trace()
                     results["finalAnalysis"]["tables"][ticker.upper()] = company_financials_df
                     results['MarketData'][ticker.upper()] = company_financials_df
                     del results["GetCompanyFinancials"][ticker]
@@ -2730,6 +3277,7 @@ def get_relevant_fiscal_columns(financials, question, debug=False):
     then include the dates requied to compute the percentage for the earliest date of the desired date range indicated by the question. The response should be a JSON list of the values  as shown in the examples below:
 
     Examples: 
+    query: "Calculate WMT's operating income % margin for FY2019 relative to the stock performance over that same period.", answer: ['Q4 2019', 'Q3 2019', 'Q2 2019', 'Q1 2019', 'Q4 2018']
     query: "what is the FY2018 - FY2019 change in unadjusted operating income % margin for WMT? Answer in units of percents and round to one decimal place.", answer: ['Q4 2019', 'Q3 2019', 'Q2 2019', 'Q1 2019', 'Q4 2018', 'Q3 2018', 'Q2 2018', 'Q1 2018', 'Q4 2017', 'Q3 2017', 'Q2 2017', 'Q1 2017']
     query: "What is AMCR's gross margin from FY2023? If gross margin is not a useful metric for a company like this, then state that and explain why.", answer: ['Q4 2023', 'Q3 2023', 'Q2 2023', 'Q1 2023']
     query: "Does AMCR have an improving gross margin profile as of FY2023? If gross margin is not a useful metric for a company like this, then state that and explain why.", answer: ['Q4 2023', 'Q3 2023', 'Q2 2023', 'Q1 2023', 'Q4 2022', 'Q3 2022', 'Q2 2022', 'Q1 2022']
@@ -2767,12 +3315,9 @@ def get_relevant_fiscal_columns(financials, question, debug=False):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt.format(question=question)}
         ],
-        
     )
 
     try:
-        # import pdb; pdb.set_trace()
-        
         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
         relevant_columns = ast.literal_eval(response[response.find("["):response.find("]")+1])
         if debug:
@@ -3019,6 +3564,592 @@ def add_highlighting_to_citations_pdfs(citations):
     return new_citations            
 
 
+# def text_to_graphql(question, entities, debug=False):
+#     # import pdb; pdb.set_trace()
+#     system_prompt = """Generate a GraphQL query for a Weaviate backend database that retrieves 10Q and 10K company financials filings based on specified filters, a user-provided question, and the specified collection.
+#     When applying filing_type filter if you see '10-Q' in the Question map it to '10Q'. Likewise, when you see '10-K' in the Question map it to '10K'. In other words, do not include the hyphen for the 'filing_type' filter.
+#     Also next include the graphql keyword 'limit' in your response since we do not want to limit the number of retrieved documents arbitrarily. If the question contains both '10-K' and '10-Q' then DO NOT use the 'filing_type'
+#     as a filter in your graphql response. Do not include any column references in your response that are not included in the Input Details section below (even if they may make logical sense in the question).
+
+#     # Input Details
+#     - **Collection**
+#     - **Filters**: These include:
+#     - `accession_number`: String
+#     - `company_name`: String
+#     - `filing_type`: String (e.g., 10Q, 10K)
+#     - `page_number`: Float
+#     - `report_date`: String
+#     - `filing_url`: String
+#     - `text`: String (search within text)
+#     - `ticker`: String
+#     - `logo`: string
+
+#     # Steps
+
+#     1. **Interpret the User's Question**: Understand the specific data or insights the user is seeking from the database.
+#     2. **Identify Relevant Filters**: Determine which filters from the provided list apply based on the user's question and goals.
+#     3. **Format GraphQL Query**:
+#     - Use the filters to construct a GraphQL query.
+#     - Select the relevant fields from the database for the query.
+
+#     # Output Format
+
+#     - The output should be a GraphQL query string formatted to fetch data from the Weaviate database using the specified filters and question context. Ensure correct syntax and structure of the GraphQL query.
+
+#     # Examples
+
+#     **Example Input**:
+#     Question: "How often has Home Depot mentioned the low supply of housing in recent years or high inflation as it related to pricing power and impact on revenue? what strategies are they employing to minimize these headwinds? Show me the trend in COGS and profit margin during these periods."
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "HD" }
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["low supply of housing", "inflation", "increased costs", "strategies to minimize headwinds"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "HD"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+
+
+
+#     **Example Input**: 
+#     Question: "how many times did aapl mention macro demand concerns in their filings since 2023?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL",  "from_date":  "2023-01-01T00:00:00.00Z", "to_date": "2024-06-30T00:00:00.00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["macro demand concerns"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did MSFT mention the activision anti-trust case in their filings since 2021?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "MSFT",  "from_date":  "2021-01-01T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["activision anti-trust case"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did MSFT mention the activision anti-trust case in their filings since 2021?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "MSFT",  "from_date":  "2021-01-01T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["activision anti-trust case"]}
+#             where: {operator: And, operands: [{path: ["ticker"],  operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did aapl raise concerns about supply chain issues in their filings between 2017-06-27 and 2023-06-27?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL",  "from_date":  "2017-06-27T00:00:00Z", "to_date": "2023-06-27T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["supply chain issues"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2017-06-27T00:00:00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2023-06-27T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "MSFT",  "from_date":  "2021-06-30T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["supply chain issues"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-06-30T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+
+#     **Example Input**: "how many times did aapl discuss artificial intelligence in their most recent 10K or 10Q?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["artificial intelligence"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+
+#     **Example Input**: "how many times has CAT raised international growth concerns in their filings over the past 2 years?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["international growth concerns"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "CAT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2022-09-30T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     '''
+#     """
+#     user_prompt = """
+#     Question: {question}
+#     Collection: {collection}
+#     Filters: {filters}
+#     """
+#     # question = "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?"
+#     # filters = { "ticker": "MSFT",  "from_date":  "2021-06-30T00:00:00Z"}
+#     import pdb; pdb.set_trace()
+#     processed_entities = []
+#     for entity in entities:
+#         if entity["entity"] in ["from_date", "to_date"]:
+#             processed_entities.append({entity["entity"]: f'{entity["value"]}T00:00:00.00Z'})
+#         else:
+#             processed_entities.append({entity["entity"]: entity["value"]})
+    
+#     collection = "Dow30_10K_10Q"
+
+#     response = openai_client.beta.chat.completions.parse(
+#         model="gpt-4o",
+#         messages=[
+#             {"role": "system", "content": system_prompt},
+#             {"role": "user", "content": user_prompt.format(question=question, collection=collection, filters=processed_entities)}
+#         ],
+#     )
+
+#     try:  
+#         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
+#         if "```graphql" in response:
+#             response = response.replace("```graphql", "").replace("```", "")
+#         # import pdb; pdb.set_trace()
+#         print(f"graphql:\n{response}")
+#         return response
+#     except Exception as e:
+#         print(f"Error inside text_to_graphql: {e}")
+#         return []
+
+# def text_to_graphql(question, entities, debug=False):
+#     # import pdb; pdb.set_trace()
+#     system_prompt = """Generate a GraphQL query for a Weaviate backend database that retrieves 10Q and 10K company financials filings based on specified filters, a user-provided question, and the specified collection.
+#     When applying filing_type filter if you see '10-Q' in the Question map it to '10Q'. Likewise, when you see '10-K' in the Question map it to '10K'. In other words, do not include the hyphen for the 'filing_type' filter.
+#     Also next include the graphql keyword 'limit' in your response since we do not want to limit the number of retrieved documents arbitrarily. If the question contains both '10-K' and '10-Q' then DO NOT use the 'filing_type'
+#     as a filter in your graphql response. Do not include any column references in your response that are not included in the Input Details section below (even if they may make logical sense in the question).
+
+#     # Input Details
+#     - **Collection**
+#     - **Filters**: These include:
+#     - `accession_number`: String
+#     - `company_name`: String
+#     - `filing_type`: String (e.g., 10Q, 10K)
+#     - `page_number`: Float
+#     - `report_date`: String
+#     - `filing_url`: String
+#     - `text`: String (search within text)
+#     - `ticker`: String
+#     - `logo`: string
+
+#     # Steps
+
+#     1. **Interpret the User's Question**: Understand the specific data or insights the user is seeking from the database.
+#     2. **Identify Relevant Filters**: Determine which filters from the provided list apply based on the user's question and goals.
+#     3. **Format GraphQL Query**:
+#     - Use the filters to construct a GraphQL query.
+#     - Select the relevant fields from the database for the query.
+
+#     # Output Format
+
+#     - The output should be a GraphQL query string formatted to fetch data from the Weaviate database using the specified filters and question context. Ensure correct syntax and structure of the GraphQL query.
+
+#     # Examples
+
+#     **Example Input**:
+#     Question: "How often has Home Depot mentioned the low supply of housing in recent years or high inflation as it related to pricing power and impact on revenue? what strategies are they employing to minimize these headwinds? Show me the trend in COGS and profit margin during these periods."
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "HD" }
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["low supply of housing", "inflation", "increased costs", "strategies to minimize headwinds"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "HD"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+
+
+
+#     **Example Input**: 
+#     Question: "how many times did aapl mention macro demand concerns in their filings since 2023?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL",  "from_date":  "2023-01-01T00:00:00.00Z", "to_date": "2024-06-30T00:00:00.00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["macro demand concerns"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did MSFT mention the activision anti-trust case in their filings since 2021?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "MSFT",  "from_date":  "2021-01-01T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["activision anti-trust case"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did MSFT mention the activision anti-trust case in their filings since 2021?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "MSFT",  "from_date":  "2021-01-01T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["activision anti-trust case"]}
+#             where: {operator: And, operands: [{path: ["ticker"],  operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did aapl raise concerns about supply chain issues in their filings between 2017-06-27 and 2023-06-27?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL",  "from_date":  "2017-06-27T00:00:00Z", "to_date": "2023-06-27T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["supply chain issues"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2017-06-27T00:00:00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2023-06-27T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     ```
+
+#     **Example Input**: 
+#     Question: "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "MSFT",  "from_date":  "2021-06-30T00:00:00Z"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["supply chain issues"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-06-30T00:00:00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+
+#     **Example Input**: "how many times did aapl discuss artificial intelligence in their most recent 10K or 10Q?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["artificial intelligence"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+
+#     **Example Input**: "how many times has CAT raised international growth concerns in their filings over the past 2 years?"
+#     Collection: "Dow30_10K_10Q"
+#     Filters: { "ticker": "AAPL"}
+
+#     **Example Output**:
+#     ```graphql
+#     {
+#         Get {
+#             Dow30_10K_10Q(
+#             nearText: {concepts: ["international growth concerns"]}
+#             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "CAT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2022-09-30T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
+#             ) {
+#             ticker
+#             text
+#             report_date
+#             accession_number
+#             company_name
+#             filing_type
+#             page_number
+#             filing_url
+#             logo
+#             }
+#         }
+#     }
+#     '''
+#     """
+#     user_prompt = """
+#     Question: {question}
+#     Collection: {collection}
+#     Filters: {filters}
+#     """
+#     # question = "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?"
+#     # filters = { "ticker": "MSFT",  "from_date":  "2021-06-30T00:00:00Z"}
+#     import pdb; pdb.set_trace()
+#     processed_entities = []
+#     for entity in entities:
+#         if entity["entity"] in ["from_date", "to_date"]:
+#             processed_entities.append({entity["entity"]: f'{entity["value"]}T00:00:00.00Z'})
+#         else:
+#             processed_entities.append({entity["entity"]: entity["value"]})
+    
+#     collection = "Dow30_10K_10Q"
+
+#     response = openai_client.beta.chat.completions.parse(
+#         model="gpt-4o",
+#         messages=[
+#             {"role": "system", "content": system_prompt},
+#             {"role": "user", "content": user_prompt.format(question=question, collection=collection, filters=processed_entities)}
+#         ],
+#     )
+
+#     try:  
+#         response = json.loads(response.to_json())["choices"][0]["message"]["content"]
+#         if "```graphql" in response:
+#             response = response.replace("```graphql", "").replace("```", "")
+#         # import pdb; pdb.set_trace()
+#         print(f"graphql:\n{response}")
+#         return response
+#     except Exception as e:
+#         print(f"Error inside text_to_graphql: {e}")
+#         return []
+
+
+# def run_graphql_query_against_weaviate_instance(query):
+#     "curl http://localhost/v1/graphql -X POST -H 'Content-type: application/json' -d '{GraphQL query}'"
+#     url = f"{WEAVIATE_URL}/v1/graphql"
+#     payload = {
+#         "operationName": "",
+#         "query": query,
+#         "variables": {}
+#     }
+#     headers = {
+#         "Content-Type": "application/json",
+#         "Authorization": f"Bearer {WEAVIATE_API_KEY}",
+#         "X-Openai-Api-Key": OPENAI_API_KEY
+#     }
+
+#     response = requests.post(url, json=payload, headers=headers)
+#     if response.status_code == 200:
+#         succeeded = True
+#     else:
+#         succeeded = False
+#     # import pdb; pdb.set_trace()
+
+#     print(response.json())
+#     return response.json(), succeeded
 def text_to_graphql(question, entities, debug=False):
     # import pdb; pdb.set_trace()
     system_prompt = """Generate a GraphQL query for a Weaviate backend database that retrieves 10Q and 10K company financials filings based on specified filters, a user-provided question, and the specified collection.
@@ -3037,6 +4168,7 @@ def text_to_graphql(question, entities, debug=False):
     - `filing_url`: String
     - `text`: String (search within text)
     - `ticker`: String
+    - `logo`: string
 
     # Steps
 
@@ -3051,6 +4183,139 @@ def text_to_graphql(question, entities, debug=False):
     - The output should be a GraphQL query string formatted to fetch data from the Weaviate database using the specified filters and question context. Ensure correct syntax and structure of the GraphQL query.
 
     # Examples
+    **Example Input**:
+    Question: "How many times has AAPL referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references."
+    Collection: "Dow30_10K_10Q"
+    Filters: { "ticker": "AAPL", "from_date": "2021-01-01T00:00:00.00Z" }
+    ```graphql
+    {
+        Get {
+            Dow30_10K_10Q(
+            hybrid: {
+                query: "india"
+            }
+            where: {operator: And, operands: [{path: ["text"], operator: Like, valueText: "*india*"}, {path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00.00Z"}]}
+            ) {
+            ticker
+            text
+            report_date
+            accession_number
+            company_name
+            filing_type
+            page_number
+            filing_url
+            logo
+            }
+        }
+    }
+    ```
+
+     **Example Input**:
+    Question: "How many times has MSFT referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references."
+    Collection: "Dow30_10K_10Q"
+    Filters: { "ticker": "MSFT", "from_date": "2021-01-01T00:00:00.00Z" }
+    ```graphql
+    {
+        Get {
+            Dow30_10K_10Q(
+            hybrid: {
+                query: "india"
+            }
+            where: {operator: And, operands: [{path: ["text"], operator: Like, valueText: "*india*"}, {path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00.00Z"}]}
+            ) {
+            ticker
+            text
+            report_date
+            accession_number
+            company_name
+            filing_type
+            page_number
+            filing_url
+            logo
+            }
+        }
+    }
+    ```
+
+    **Example Input**:
+    Question: "How many times has AAPL referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references."
+    Collection: "Dow30_10K_10Q"
+    Filters: { "ticker": "AAPL", "from_date": "2021-01-01T00:00:00.00Z" }
+    ```graphql
+    {
+        Get {
+            Dow30_10K_10Q(
+            hybrid: {
+                query: "india"
+            }
+            where: {operator: And, operands: [{path: ["text"], operator: Like, valueText: "*india*"}, {path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00.00Z"}]}
+            ) {
+            ticker
+            text
+            report_date
+            accession_number
+            company_name
+            filing_type
+            page_number
+            filing_url
+            logo
+            }
+        }
+    }
+    ```
+
+     **Example Input**:
+    Question: "How many times has MSFT referenced growth in the Indian market in their filings since 2021 what percentage of the references are positive versus negative references."
+    Collection: "Dow30_10K_10Q"
+    Filters: { "ticker": "MSFT", "from_date": "2021-01-01T00:00:00.00Z" }
+    ```graphql
+    {
+        Get {
+            Dow30_10K_10Q(
+            hybrid: {
+                query: "india"
+            }
+            where: {operator: And, operands: [{path: ["text"], operator: Like, valueText: "*india*"}, {path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00.00Z"}]}
+            ) {
+            ticker
+            text
+            report_date
+            accession_number
+            company_name
+            filing_type
+            page_number
+            filing_url
+            logo
+            }
+        }
+    }
+    ```
+
+    **Example Input**:
+    Question: "How often has Home Depot mentioned the low supply of housing in recent years or high inflation as it related to pricing power and impact on revenue? what strategies are they employing to minimize these headwinds? Show me the trend in COGS and profit margin during these periods."
+    Collection: "Dow30_10K_10Q"
+    Filters: { "ticker": "HD" }
+    ```graphql
+    {
+        Get {
+            Dow30_10K_10Q(
+            hybrid: {
+                query: "housing supply"
+            }
+            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "HD"}]}
+            ) {
+            ticker
+            text
+            report_date
+            accession_number
+            company_name
+            filing_type
+            page_number
+            filing_url
+            logo
+            }
+        }
+    }
 
 
 
@@ -3063,8 +4328,10 @@ def text_to_graphql(question, entities, debug=False):
     ```graphql
     {
         Get {
-            Dow30_10K_10Q(
-            nearText: {concepts: ["macro demand concerns"]}
+            Dow30_10K_10Q( 
+            hybrid: {
+                query: "macro demand concerns"
+            }
             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2023-01-01T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
             ) {
             ticker
@@ -3075,6 +4342,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3090,8 +4358,10 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["activision anti-trust case"]}
-            where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+            hybrid: {
+                query: "activision anti-trust case"
+            }
+            where: {operator: And, operands: [{path: ["text"],  operator: Like, valueText: "*activision*"},, {path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
             ) {
             ticker
             text
@@ -3101,6 +4371,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3116,8 +4387,10 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["activision anti-trust case"]}
-            where: {operator: And, operands: [{path: ["ticker"],  operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
+            hybrid: {
+                query: "activision anti-trust case"
+            }
+            where: {operator: And, operands: [{path: ["text"],  operator: Like, valueText: "*activision*"}, {path: ["ticker"],  operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-01-01T00:00:00Z"}]}
             ) {
             ticker
             text
@@ -3127,6 +4400,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3142,7 +4416,9 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["supply chain issues"]}
+            hybrid: {
+                query: "supply chain issues"
+            }
             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2017-06-27T00:00:00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2023-06-27T00:00:00Z"}]}
             ) {
             ticker
@@ -3153,6 +4429,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3168,7 +4445,9 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["supply chain issues"]}
+            hybrid: {
+                query: "supply chain issues"
+            }
             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "MSFT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2021-06-30T00:00:00Z"}]}
             ) {
             ticker
@@ -3179,6 +4458,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3192,7 +4472,9 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["artificial intelligence"]}
+            hybrid: {
+                query: "artificial intelligence"
+            }
             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "AAPL"}]}
             ) {
             ticker
@@ -3203,6 +4485,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3216,7 +4499,9 @@ def text_to_graphql(question, entities, debug=False):
     {
         Get {
             Dow30_10K_10Q(
-            nearText: {concepts: ["international growth concerns"]}
+            hybrid: {
+                query: "international growth concerns"
+            }
             where: {operator: And, operands: [{path: ["ticker"], operator: Equal, valueText: "CAT"}, {path: ["report_date"], operator: GreaterThanEqual, valueDate: "2022-09-30T00:00:00.00Z"}, {path: ["report_date"], operator: LessThanEqual, valueDate: "2024-06-30T00:00:00.00Z"}]}
             ) {
             ticker
@@ -3227,6 +4512,7 @@ def text_to_graphql(question, entities, debug=False):
             filing_type
             page_number
             filing_url
+            logo
             }
         }
     }
@@ -3294,7 +4580,10 @@ def run_graphql_query_against_weaviate_instance(query):
     return response.json(), succeeded
 
 
-
+"""
+        'user query': What’s the price impact every time aapl mentions supply chain issues in their filings relative to their average post filing stock move?, 'data': ['report_date', 'Open', 'High', 'Low', 'Close', 'Volume', 'Dividends', 'Stock Splits']
+'answer': df_market_data['Stock Move'] = df_market_data['Close'].pct_change(periods=1)[::-1].cumsum()[::-1].mean().round(2)
+"""
 def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
     try:
         system_prompt = """ 
@@ -3308,6 +4597,10 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         Use the name qual_and_quant_df to represent that pandas DataFrame in your response. 
 
         Examples:
+        'user query': "how many times has travelers referenced natural disasters in their filings over the past few years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
+        'user query': "How many times has MSFT referenced growth in the Indian market in their filings since 2021 and what percentage of the references are positive versus negative references?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'logo', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df.loc[:, 'Total Positive'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment'] > 0]); qual_and_quant_df.loc[:, 'Total Negative'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment'] < 0])"
+        'user query': "How many times has AAPL referenced growth in the Indian market in their filings since 2021 and what percentage of the references are positive versus negative references?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'logo', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df.loc[:, 'Total Positive'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment'] > 0]); qual_and_quant_df.loc[:, 'Total Negative'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment'] < 0])"
+        'user query': "of the number of times aapl mentions macro demand, how many were positive versus negative?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'logo', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df.loc[:, 'Total Positive'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment'] > 0]); qual_and_quant_df.loc[:, 'Total Negative'] = len(qual_and_quant_df[qual_and_quant_df['Sentiment'] < 0])"
         'user query': "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], answer: ""qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))""
         'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
         'user query': "how many times did msft raise concerns about supply chain issues in their filings in the last 3 years?", 'data': ['accession_number', 'company_name', 'filing_type', 'url', 'page_number', 'report_date', 'text', 'ticker', 'Sentiment'], 'answer': "qual_and_quant_df['Cumulative Instances'] = list(range(1, len(qual_and_quant_df)+1))"
@@ -3338,6 +4631,8 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
                 {"role": "user", "content": prompt.format(question=question, qual_and_quant_df=list(qual_and_quant_df.columns))}
             ],
         )
+
+        
         
         # import pdb; pdb.set_trace()
         new_response = json.loads(response.to_json())["choices"][0]["message"]["content"]
@@ -3348,7 +4643,7 @@ def do_calculate_for_qual_and_quant(question, qual_and_quant_df):
         print(f"'user query': {question}")
         print(f"'data': {list(qual_and_quant_df.columns)}")
         print(f"'answer': {new_response}")
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         if "filing_url" in new_response:
             new_resposne = new_response.replace('filing_url', 'url')
         exec(new_response)
@@ -3490,6 +4785,7 @@ def get_sentiment(df):
 
 def perform_quantitative_vector_search(question, results, debug=False):
     try:    
+        # import pdb; pdb.set_trace()
         entities = extract_entities_from_user_query(question, debug)
         filters = []
 
@@ -3529,7 +4825,8 @@ def perform_quantitative_vector_search(question, results, debug=False):
             qual_and_quant_df.reset_index(drop=True, inplace=True)
 
             qual_and_quant_df = get_sentiment(qual_and_quant_df)
-            print(f"qual_and_quant_df:\n{qual_and_quant_df.head()}\n\n")
+            # import pdb; pdb.set_trace()
+            # print(f"qual_and_quant_df:\n{qual_and_quant_df.head()}\n\n")
 
             if_should_do_calculate_for_qual_and_quant = should_do_calculate_for_qual_and_quant(question)
             
@@ -3540,7 +4837,7 @@ def perform_quantitative_vector_search(question, results, debug=False):
             #     qual_and_quant_df.drop(columns=["text"], inplace=True)
 
             results["Context"].append(
-                f"Qualitative and Quantitative results for query (ticker={ticker}): {question} \n\n{qual_and_quant_df.to_json()}"
+                f"Use the 'text' values in the following information to support your analysis for {ticker} for the question: {question}: \n\n{qual_and_quant_df.to_json()}"
             )
             
             citations = [{"text": t["text"], "id": "", "logo": t["logo"], "page_number": t["page_number"], "url": t["filing_url"], "title": f'{t["company_name"]} {t["filing_type"]} {t["report_date"].split("T")[0]}' , "company": t["company_name"], "importance": 1.0} for t in response["data"]["Get"]["Dow30_10K_10Q"]]
@@ -3580,16 +4877,28 @@ def perform_quantitative_vector_search(question, results, debug=False):
 
                 results["finalAnalysis"]["citations"].extend(citations)
                 results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
+                # results["Context"].append(
+                #     f"Response to Query: {question} \n\n{qual_and_quant_df}"
+                # ) 
+                # results["Context"].append(
+                #     f"Citations for query: {question} \n\n{citations}"
+                # )
+                results["Context"].append(
+                    f"Supporting data table for Query: {question} \n\n{qual_and_quant_df}"
+                ) 
                 return results
 
             else:
-                results["QualAndQuant"][ticker.upper()] = df_citations
+                results["QualAndQuant"][ticker.upper()] = qual_and_quant_df
                 results["finalAnalysis"]["citations"].extend(citations)
                 results["finalAnalysis"]["tables"][ticker.upper()] = qual_and_quant_df
                 
-                response = '\n\n'.join([c["text"] for c in citations])
+                # response = '\n\n'.join([c["text"] for c in citations])
+                # results["Context"].append(
+                #     f"Citations for query: {question} \n\n{citations}"
+                # )
                 results["Context"].append(
-                    f"Response to Query: {question} \n\n{response}"
+                    f"Supporting data table for Query: {question} \n\n{qual_and_quant_df}"
                 ) 
                 return results
 
@@ -4351,6 +5660,8 @@ def get_fiscal_or_calendar_by_user_query(question):
     other than the JSON list. See the examples below:
 
     Examples: 
+        query: "Calculate AAPL's profit margin and inventory ratio according to its 10K’s/Q filings from FY2022 to FY2024. What's the correlation, r-squared, between these metrics and their respective variances?", answer: ['calendar']
+        query: "Calculate TSLA's profit margin and inventory ratio according to its 10K’s/Q filings from 2022 to 2024. What's the correlation, r-squared, between these metrics and their respective variances?", answer: ['calendar']
         query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: ['calendar']    
         query: "compare the cogs between 2021 and 2023 between AMZN and its comps", answer: ['calendar']
         query: "investigate the trends in JP Morgan's net interest margin and loan growth over the past 2 years. How have changes in interest rates and economic conditions influenced their profitability?", answer: ['calendar']
@@ -4427,7 +5738,9 @@ def get_stock_financials(ticker, mode='calendar', limit=5, debug=False):
     return result_df
 
 
-
+"""
+user query: "Of Coca-cola which company has referenced negative impacts from the Russian invasion of Ukraine and Russian sanctions the most since the invasion began in 2022?", answer: "True"
+"""
 def should_do_calculate_for_qual_and_quant(question, debug=False):
     system_prompt = """ 
     You are a tool used to guide a RAG system. Your job is to determine where a calculator function needs to be called or not.
@@ -4437,7 +5750,12 @@ def should_do_calculate_for_qual_and_quant(question, debug=False):
     Below are some examples of user query, json data, and response triplets.
 
     Examples:
-    user query: "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", answer: "False"
+    user query: "how many times has travelers referenced natural disasters in their filings over the past few years?", answer: "True"
+    user query: "How has AMEX talked about macro demand in their filings over the past 3 years. How do they differ in how they’ve discussed it", answer: "True"
+    user query: "Has Travelers talked about the increased frequency of natural disasters and it’s impact on their business? If so, how do they talk about it? Has their been a noticeable shift in tonality and frequency in their filings over the past few years?", answer: "True"
+    user query: "of the number of times aapl mentions macro deman, how many were positive versus negative?", answer: "True"
+    user query: "What’s the price impact every time aapl mentions supply chain issues in their filings relative to their average post filing stock move?", answer: "True"
+    user query: "If I had bought AAPL stock every time they mentioned supply chain concerns in their filing if I had held it over the following quarter?", answer: "True"
     user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
     user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
     user query: "How has apple's reported revenue growth trended when they mentioned macro concerns in the same filing? Would I have made money if i bought the stock each time?", answer: "False"
@@ -4614,6 +5932,12 @@ def get_financials(question, results, debug=False):
         temp_financials['Company'] = [ticker.upper()]*len(temp_financials)
         results["GetCompanyFinancials"][ticker.upper()] = temp_financials
         chart_data = temp_financials.to_json()
+        chart = {
+            "type": "line",
+            "data": chart_data.to_dict("records"),
+            "dataKeys": [c for c in list(chart_data.columns) if "date" not in c.lower()]
+        }
+        results["finalAnalysis"]["charts"][ticker.upper()] = chart
 
         results["Context"].append(
             f"{temp_financials.T.columns[0]} results for {ticker.upper()}: {temp_financials.to_json()}"
@@ -4794,26 +6118,41 @@ def get_final_analysis(query, results, debug=False):
             results = merge_charts(results)
         # if "tables" in results["finalAnalysis"]:
         #     results = merge_tables(results)
-        del results["finalAnalysis"]["charts"]
+        del results["finalAnalysis"]["tables"]
         results = merge_frames(results)
 
-        if "workbookData" not in results["finalAnalysis"]:
-            results["finalAnalysis"]["workbookData"] = None
+        # if "workbookData" not in results["finalAnalysis"]:
+        #     results["finalAnalysis"]["workbookData"] = None
+
         # import pdb; pdb.set_trace()
-        if "ResultsFromGetFinancials" in results:
-            should_calculate = False #should_global_calculate(query, df_temp, debug)
-            print(f"should_global_calculate: {should_calculate}")
-            if should_calculate:
-                results = do_global_calculate(query, results["finalAnalysis"]["tables"], debug)
-                print(f"results after do_global_calculate: {results}")
+        # if "ResultsFromGetFinancials" in results:
+        #     should_calculate = False #should_global_calculate(query, df_temp, debug)
+        #     print(f"should_global_calculate: {should_calculate}")
+        #     if should_calculate:
+        #         results = do_global_calculate(query, results["finalAnalysis"]["tables"], debug)
+        #         print(f"results after do_global_calculate: {results}")
 
         # print(f"context: {context}")
         context = '\n'.join([str(c) for c in context])
+        query += " If relevant, use any supporting information to add additional color around the data points. Use direct quotes to make your claims stronger."
 
         # import pdb; pdb.set_trace()
 
         system_content = """
-        Given a user-supplied query and a context that contains the raw data to necessary to answer the query, generate a response that synthesizes the provided context to answer the question.
+         You are the Managing Director on an elite team of world-class financial researchers at the world's premier hedge fund.
+            Your team delivers insightful research based on any company or industry and produce factual based results for your clients.
+            You have a PhD in economics and finance. Your task is to synthesize data and present it in a clear,
+            well-structured format using markdown. The research analysts on your team will send you all the context you need to answer the users request.
+
+            Here are some guidelines to follow:
+            + Be concise. No one has time for fluff.
+            + Provide supporting evidence for all your claims, whether that be quotes, numbers, or something else, but only use the context provided to you for your supportive evidence and for making claims. 
+            + Skip the obvious stuff. We're at the world's best hedge fund. Everyone knows the obvious stuff already.
+            + Never make things up. Only use the context you are given. You will be fired if you make things up.
+            + Put things into charts and tables when relevant.
+            + Remember, we are an investment firm. You are trying to inform future investments.
+
+         Here is the context your research team has put together for you to use for your report. Do not use any information outside of what has been provided for making claims
         """
 
         prompt = """
@@ -4821,6 +6160,7 @@ def get_final_analysis(query, results, debug=False):
 
         context: {context}
         """
+        
 
         response = openai_client.beta.chat.completions.parse(
             model="gpt-4o",
@@ -4840,7 +6180,7 @@ def get_final_analysis(query, results, debug=False):
             results["finalAnalysis"]["insights"] = []
 
         results["finalAnalysis"]["insights"].append({
-            "title": f"Response to Query: {query}",
+            "title": query,
             "content": f"\n\n{response}"
         })
 

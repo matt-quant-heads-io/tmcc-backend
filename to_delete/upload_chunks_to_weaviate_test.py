@@ -166,7 +166,7 @@ class_obj = {
 #     client.schema.delete_class("Dow30_10K_10Q")
 # client.schema.create_class(class_obj)
 
-# print(client.is_ready())
+print(client.is_ready())
 # import pdb; pdb.set_trace()
 
 
@@ -210,7 +210,7 @@ def upload_data_to_weaviate(client):
 
     for file in tqdm(filings_to_load):
         try:
-            if not file.endswith(".json"):
+            if not file.endswith(".json") or file in loaded_filings:
                 continue
 
             data = None

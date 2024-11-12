@@ -193,7 +193,7 @@ class ResearchPipeline:
 
     #     return results
 
-    async def execute_tasks(self, query:str, tasks: List[Dict[str, Any]], progress_callback: Callable[[str, Any], Awaitable[None]]) -> Dict[str, Any]:
+    async def execute_tasks(self, original_query:str, query:str, tasks: List[Dict[str, Any]], progress_callback: Callable[[str, Any], Awaitable[None]]) -> Dict[str, Any]:
         debug = False
         if query.endswith("[debug]"):
             debug = True
@@ -281,7 +281,11 @@ class ResearchPipeline:
             
 
             try:
-                result_json = tool(t["query"], results, debug)
+                if task_name == "get_final_analysis":
+                    result_json = tool(original_query, results, debug)
+                else:
+                    result_json = tool( t["query"], results, debug)
+                   
             except RuntimeError as e:
                 print(f"Error in execute tasks: {e}")
             await send_sse({"event": "update",
@@ -295,7 +299,7 @@ class ResearchPipeline:
         return results
 
     async def execute_research_plan(self, original_query, query: str, tasks: List[Dict[str, Any]], callback_url: Callable) -> str:
-        results = await self.execute_tasks(query, tasks, callback_url)
+        results = await self.execute_tasks(original_query, query, tasks, callback_url)
         
         # await send_sse({"event": "update",
         #                 "type": "subtaskUpdate",
